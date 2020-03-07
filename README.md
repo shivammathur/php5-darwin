@@ -12,21 +12,21 @@ PHP versions in this project have reached end of life and should not be used exc
 
 ### PHP 5.3
 ```bash
-curl -sSL https://github.com/shivammathur/php5-darwin/releases/latest/download/install.sh | bash -s 5.3
+curl -sSL https://github.com/shivammathur/php5-darwin/releases/latest/download/install.sh | bash -s 53
 ```
 
 ### PHP 5.4
 ```bash
-curl -sSL https://github.com/shivammathur/php5-darwin/releases/latest/download/install.sh | bash -s 5.4
+curl -sSL https://github.com/shivammathur/php5-darwin/releases/latest/download/install.sh | bash -s 54
 ```
 
 ### PHP 5.5
 ```bash
-curl -sSL https://github.com/shivammathur/php5-darwin/releases/latest/download/install.sh | bash -s 5.5
+curl -sSL https://github.com/shivammathur/php5-darwin/releases/latest/download/install.sh | bash -s 55
 ```
 
 ## License
 
 This project is licensed under the [MIT license](http://choosealicense.com/licenses/mit/).
 Please see the [license file](LICENSE) for more information.
-This project uses builds from [liip/php-osx](https://github.com/liip/php-osx "liip/php-osx") and their LICENSE can be found [here](LIIP_LICENSE).
+This project uses builds from [macports](https://github.com/macports/macports-ports "macports/macports-ports") and their LICENSE can be found [here](MACPORTS_LICENSE).

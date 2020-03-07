@@ -1,12 +1,15 @@
 name: Test
-on: [push]
+on:
+  push:
+    branches:
+      - master
 jobs:
   run:
     runs-on: macos-latest
     strategy:
       fail-fast: false
       matrix:
-        php-versions: ['5.3', '5.4', '5.5']
+        php-versions: ['53', '54', '55']
     name: PHP ${{ matrix.php-versions }}
     steps:
       - name: Checkout

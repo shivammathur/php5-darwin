@@ -9,14 +9,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php-versions: ['53', '54', '55']
+        php-versions: ['5.3', '5.4', '5.5']
     name: PHP ${{ matrix.php-versions }}
     steps:
       - name: Checkout
         uses: actions/checkout@v2
 
       - name: Setup PHP
-        run: bash install.sh ${{ matrix.php-versions }}
+        run: |
+          version=${{ matrix.php-versions }}
+          bash install.sh ${version/./}
       - name: Testing PHP version
         run: |
           php -v

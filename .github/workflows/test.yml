@@ -3,6 +3,11 @@ on:
   push:
     branches:
       - master
+      - develop
+  pull_request:
+    branches:
+      - master
+      - develop
 jobs:
   run:
     runs-on: macos-latest
@@ -21,8 +26,21 @@ jobs:
           bash install.sh ${version/./}
       - name: Testing PHP version
         run: |
+          php --ini
           php -v
+          phpize --version
+          php-config --version
           php -r "if(strpos(phpversion(), '${{ matrix.php-versions }}') === false) {throw new Exception('Wrong PHP version Installed');}"
-      - name: Testing
+      - name: Testing PHP extensions
         run: |
           php -m
+          version=${{ matrix.php-versions }}
+          for bin in /tmp/php"${version/./}"/ext/*.so; do
+            extension=$(basename "$bin" | cut -d'.' -f 1)
+            php -r "if(! extension_loaded('$extension')) {throw new Exception('$extension not found');}"
+          done
+          php -r "if(! extension_loaded('Zend OPcache')) {throw new Exception('Zend OPcache not found');}"
+      - name: Testing PECL version
+        run: pecl -V
+      - name: Testing SSL in file_get_contents
+        run: php -r "echo file_get_contents('https://repo.packagist.org/packages.json');"

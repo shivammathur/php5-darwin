@@ -1,5 +1,6 @@
 name: Test
 on:
+  repository_dispatch:
   push:
     branches:
       - master
@@ -22,6 +23,7 @@ jobs:
 
       - name: Setup PHP
         run: |
+          zstd --version
           version=${{ matrix.php-versions }}
           bash install.sh ${version/./}
       - name: Testing PHP version
@@ -37,8 +39,10 @@ jobs:
           version=${{ matrix.php-versions }}
           for bin in /tmp/php"${version/./}"/ext/*.so; do
             extension=$(basename "$bin" | cut -d'.' -f 1)
-            php -r "if(! extension_loaded('$extension')) {throw new Exception('$extension not found');}"
+            php -r "if(! extension_loaded('$extension')) {throw new Exception('$extension not found');}" &
+            to_wait+=( $! )
           done
+          wait "${to_wait[@]}"
           php -r "if(! extension_loaded('Zend OPcache')) {throw new Exception('Zend OPcache not found');}"
       - name: Testing PECL version
         run: pecl -V

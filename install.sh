@@ -17,8 +17,8 @@ switch_version() {
 
 # Function to setup PHP
 setup_php() {
-  curl -o "$tmp_path".tar.xz -sSL "$github_repo"/releases/latest/download/"$php_version".tar.xz
-  sudo tar xf "$tmp_path".tar.xz -C /tmp
+  curl -o "$tmp_path".tar.zst -sSL "$github_repo"/releases/latest/download/"$php_version".tar.zst
+  zstdcat "$tmp_path".tar.zst --no-progress - | tar -xf - -C /tmp
   sudo installer -pkg "$tmp_path"/"$php_version".mpkg -target /
   sudo cp -a "$tmp_path"/lib/* /opt/local/lib
   sudo cp "$php_etc_dir"/php.ini-development "$php_etc_dir"/php.ini

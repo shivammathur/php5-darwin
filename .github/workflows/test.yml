@@ -39,7 +39,7 @@ jobs:
           version=${{ matrix.php-versions }}
           for bin in /tmp/php"${version/./}"/ext/*.so; do
             extension=$(basename "$bin" | cut -d'.' -f 1)
-            php -r "if(! extension_loaded('$extension')) {throw new Exception('$extension not found');}" &
+            ([ "$extension" != "xdebug" ] && php -r "if(! extension_loaded('$extension')) {throw new Exception('$extension not found');}") &
             to_wait+=( $! )
           done
           wait "${to_wait[@]}"

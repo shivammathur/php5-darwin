@@ -1,24 +1,35 @@
 version=$1
 php_version="php$version"
 ini_file="/opt/local/etc/php$version/php.ini"
-github_link="https://github.com/"
-github_repo="$github_link/shivammathur/php5-darwin"
+github="https://github.com/"
+repo="$github/shivammathur/php5-darwin"
 php_etc_dir="/opt/local/etc/php$version"
 tmp_path="/tmp/php$version"
 export TERM=xterm
 
-# Function to switch PHP version
-switch_version() {
-  for tool in php phpize php-config; do
-    sudo mv /opt/local/bin/"$tool$version" /opt/local/bin/"$tool"
+get() {
+  file_path=$1
+  shift
+  links=("$@")
+  for link in "${links[@]}"; do
+    status_code=$(sudo curl -w "%{http_code}" -o "$file_path" -sL "$link")
+    [ "$status_code" = "200" ] && break
   done
+}
+
+switch_version() {
+  to_wait=()
+  for tool in php phpize php-config; do
+    sudo mv /opt/local/bin/"$tool$version" /opt/local/bin/"$tool" &
+    to_wait+=( $! )
+  done
+  wait "${to_wait[@]}"
   sudo ln -sf /opt/local/bin/* /usr/local/bin
 }
 
-# Function to setup PHP
 setup_php() {
-  curl -o "$tmp_path".tar.zst -sSL "$github_repo"/releases/latest/download/"$php_version".tar.zst
-  zstdcat "$tmp_path".tar.zst --no-progress - | tar -xf - -C /tmp
+  get "$tmp_path.tar.zst" "$repo/releases/latest/download/$php_version.tar.zst" "https://dl.bintray.com/shivammathur/php/$php_version.tar.zst"
+  zstd -dq "$tmp_path".tar.zst && tar xf "$tmp_path".tar -C /tmp
   sudo installer -pkg "$tmp_path"/"$php_version".mpkg -target /
   sudo cp -a "$tmp_path"/lib/* /opt/local/lib
   sudo cp "$php_etc_dir"/php.ini-development "$php_etc_dir"/php.ini
@@ -26,27 +37,46 @@ setup_php() {
   echo "date.timezone=UTC" >>"$ini_file"
 }
 
-# Function to add extensions
+add_ext_to_ini() {
+  ext_file=$1
+  extension=$(basename "$ext_file" | cut -d'.' -f 1)
+  if [ "$extension" != "xdebug" ]; then
+    echo "extension=$extension.so" >>"$ini_file"
+  fi
+
+}
+
 add_extensions() {
   ext_dir=$(php -i | grep -Ei "extension_dir => /" | sed -e "s|.*=> s*||")
   sudo mkdir -p "$ext_dir"
+  sudo chmod 777 "$ext_dir"
   sudo cp -a "$tmp_path"/ext/*.so "$ext_dir"
-  sudo installer -pkg "$tmp_path"/"$php_version"-opcache.pkg -target /
-  for bin in "$tmp_path"/ext/*.so; do
-    extension=$(basename "$bin" | cut -d'.' -f 1)
-    echo "extension=$extension.so" >>"$ini_file"
+  to_wait=()
+  for pkg in cgi fpm opcache; do
+    sudo installer -pkg "$tmp_path"/"$php_version"-"$pkg".pkg -target / &
+    to_wait+=($!)
   done
+  wait "${to_wait[@]}"
+  for bin in "$tmp_path"/ext/*.so; do
+    add_ext_to_ini "$bin" &
+    to_wait+=($!)
+  done
+  wait "${to_wait[@]}"
+  sudo ln -sf /opt/local/bin/php-cgi"$version" /usr/local/bin/php-cgi
+  sudo ln -sf /opt/local/sbin/php-fpm"$version" /usr/local/bin/php-fpm
+  sudo sed -i "" "s/VERSION/$version/" "$tmp_path"/php-fpm.conf
+  sudo cp "$tmp_path"/php-fpm.conf "$php_etc_dir"
 }
 
-# Function to add pear
 add_pear() {
   pecl_version='master'
   if [ "$version" = "53" ]; then
     pecl_version='v1.9.5'
   fi
-  pear_github_repo="$github_link/pear/pearweb_phars"
-  sudo curl -o /tmp/pear.phar -sSL "$pear_github_repo/raw/$pecl_version/install-pear-nozlib.phar"
+  pear_repo="$github/pear/pearweb_phars"
+  sudo curl -o /tmp/pear.phar -sL "$pear_repo/raw/$pecl_version/install-pear-nozlib.phar"
   sudo php /tmp/pear.phar -d /opt/local/lib/"$php_version" -b /usr/local/bin
+  echo '' | sudo tee /tmp/pecl_config >/dev/null 2>&1
 }
 
 setup_php

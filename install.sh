@@ -5,6 +5,10 @@ github="https://github.com/"
 repo="$github/shivammathur/php5-darwin"
 php_etc_dir="/opt/local/etc/php$version"
 tmp_path="/tmp/php$version"
+opt_bin="/opt/local/bin"
+opt_sbin="/opt/local/sbin"
+opt_lib="/opt/local/lib"
+usr_bin="/usr/local/bin"
 export TERM=xterm
 
 get() {
@@ -20,18 +24,18 @@ get() {
 switch_version() {
   to_wait=()
   for tool in php phpize php-config; do
-    sudo mv /opt/local/bin/"$tool$version" /opt/local/bin/"$tool" &
-    to_wait+=( $! )
+    sudo mv "$opt_bin/$tool$version" "$opt_bin/$tool" &
+    to_wait+=($!)
   done
   wait "${to_wait[@]}"
-  sudo ln -sf /opt/local/bin/* /usr/local/bin
+  sudo ln -sf "$opt_bin"/* "$usr_bin"
 }
 
 setup_php() {
   get "$tmp_path.tar.zst" "$repo/releases/latest/download/$php_version.tar.zst" "https://dl.bintray.com/shivammathur/php/$php_version.tar.zst"
   zstd -dq "$tmp_path".tar.zst && tar xf "$tmp_path".tar -C /tmp
   sudo installer -pkg "$tmp_path"/"$php_version".mpkg -target /
-  sudo cp -a "$tmp_path"/lib/* /opt/local/lib
+  sudo cp -a "$tmp_path"/lib/* "$opt_lib"
   sudo cp "$php_etc_dir"/php.ini-development "$php_etc_dir"/php.ini
   sudo chmod 777 "$ini_file"
   echo "date.timezone=UTC" >>"$ini_file"
@@ -43,7 +47,12 @@ add_ext_to_ini() {
   if [ "$extension" != "xdebug" ]; then
     echo "extension=$extension.so" >>"$ini_file"
   fi
+}
 
+add_daemondo() {
+  get "$opt_bin"/daemondo "$repo"/releases/latest/download/daemondo
+  sudo chmod a+x "$opt_bin"/daemondo
+  sudo ln -sf "$opt_bin"/daemondo "$usr_bin"
 }
 
 add_extensions() {
@@ -62,8 +71,8 @@ add_extensions() {
     to_wait+=($!)
   done
   wait "${to_wait[@]}"
-  sudo ln -sf /opt/local/bin/php-cgi"$version" /usr/local/bin/php-cgi
-  sudo ln -sf /opt/local/sbin/php-fpm"$version" /usr/local/bin/php-fpm
+  sudo ln -sf "$opt_bin"/php-cgi"$version" "$usr_bin"/php-cgi
+  sudo ln -sf "$opt_sbin"/php-fpm"$version" "$usr_bin"/php-fpm
   sudo sed -i "" "s/VERSION/$version/" "$tmp_path"/php-fpm.conf
   sudo cp "$tmp_path"/php-fpm.conf "$php_etc_dir"
 }
@@ -75,11 +84,12 @@ add_pear() {
   fi
   pear_repo="$github/pear/pearweb_phars"
   sudo curl -o /tmp/pear.phar -sL "$pear_repo/raw/$pecl_version/install-pear-nozlib.phar"
-  sudo php /tmp/pear.phar -d /opt/local/lib/"$php_version" -b /usr/local/bin
+  sudo php /tmp/pear.phar -d "$opt_lib"/"$php_version" -b "$usr_bin"
   echo '' | sudo tee /tmp/pecl_config >/dev/null 2>&1
 }
 
 setup_php
 switch_version
 add_extensions
+add_daemondo
 add_pear

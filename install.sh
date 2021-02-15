@@ -25,7 +25,7 @@ get() {
 switch_version() {
   to_wait=()
   for tool in php phpize php-config; do
-    sudo mv "$opt_bin/$tool$version" "$opt_bin/$tool" &
+    sudo cp "$opt_bin/$tool$version" "$opt_bin/$tool" &
     to_wait+=($!)
   done
   wait "${to_wait[@]}"

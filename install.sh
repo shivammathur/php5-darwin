@@ -1,7 +1,7 @@
 version=$1
 php_version="php$version"
 ini_file="/opt/local/etc/php$version/php.ini"
-github="https://github.com/"
+github="https://github.com"
 repo="$github/shivammathur/php5-darwin"
 php_etc_dir="/opt/local/etc/php$version"
 tmp_path="/tmp/php$version"
@@ -78,6 +78,7 @@ add_extensions() {
 }
 
 add_pear() {
+  sudo rm -rf "$(command -v pear)" "$(command -v pecl)"
   pecl_version='master'
   if [ "$version" = "53" ]; then
     pecl_version='v1.9.5'
@@ -85,6 +86,10 @@ add_pear() {
   pear_repo="$github/pear/pearweb_phars"
   sudo curl -o /tmp/pear.phar -sL "$pear_repo/raw/$pecl_version/install-pear-nozlib.phar"
   sudo php /tmp/pear.phar -d "$opt_lib"/"$php_version" -b "$usr_bin"
+  for script in pear pecl; do
+    sudo "$script" config-set php_ini "$ini_file"
+    sudo "$script" config-set php_bin "$opt_bin/php"
+  done
   echo '' | sudo tee /tmp/pecl_config >/dev/null 2>&1
 }
 

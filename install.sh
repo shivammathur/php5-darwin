@@ -6,6 +6,7 @@ repo="$github/shivammathur/php5-darwin"
 php_etc_dir="/opt/local/etc/php$version"
 tmp_path="/tmp/php$version"
 opt_bin="/opt/local/bin"
+opt_inc="/opt/local/include"
 opt_sbin="/opt/local/sbin"
 opt_lib="/opt/local/lib"
 usr_bin="/usr/local/bin"
@@ -60,6 +61,7 @@ add_extensions() {
   sudo mkdir -p "$ext_dir"
   sudo chmod 777 "$ext_dir"
   sudo cp -a "$tmp_path"/ext/*.so "$ext_dir"
+  sudo cp -a "$tmp_path"/include/* "$opt_inc"
   to_wait=()
   for pkg in cgi fpm opcache; do
     sudo installer -pkg "$tmp_path"/"$php_version"-"$pkg".pkg -target / &

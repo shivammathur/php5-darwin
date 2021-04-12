@@ -2,7 +2,7 @@
 
 <a href="https://github.com/shivammathur/php5-darwin" title="php5 install scripts for darwin"><img alt="Build status" src="https://github.com/shivammathur/php5-darwin/workflows/Test/badge.svg"></a>
 <a href="https://github.com/shivammathur/php5-darwin/blob/main/LICENSE" title="license"><img alt="LICENSE" src="https://img.shields.io/badge/license-MIT-428f7e.svg"></a>
-<a href="https://github.com/shivammathur/php5-darwin/tree/main/dist" title="builds"><img alt="PHP Versions Supported" src="https://img.shields.io/badge/php-5.3, 5.4 and 5.5-8892BF.svg"></a>
+<a href="https://github.com/shivammathur/php5-darwin/releases/latest" title="builds"><img alt="PHP Versions Supported" src="https://img.shields.io/badge/php-5.3, 5.4 and 5.5-8892BF.svg"></a>
 
 > Scripts to install end of life PHP versions.
 

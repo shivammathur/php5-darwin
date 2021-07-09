@@ -2,7 +2,9 @@ version=$1
 php_version="php$version"
 ini_file="/opt/local/etc/php$version/php.ini"
 github="https://github.com"
-repo="$github/shivammathur/php5-darwin"
+cds="https://dl.cloudsmith.io"
+repo="shivammathur/php5-darwin"
+repo_url="$github/$repo"
 php_etc_dir="/opt/local/etc/php$version"
 tmp_path="/tmp/php$version"
 opt_bin="/opt/local/bin"
@@ -33,7 +35,7 @@ switch_version() {
 }
 
 setup_php() {
-  get "$tmp_path.tar.zst" "$repo/releases/latest/download/$php_version.tar.zst" "https://dl.bintray.com/shivammathur/php/$php_version.tar.zst"
+  get "$tmp_path.tar.zst" "$repo_url/releases/latest/download/$php_version.tar.zst" "$cds/public/$repo/raw/files/$php_version.tar.zst"
   zstd -dq "$tmp_path".tar.zst && tar xf "$tmp_path".tar -C /tmp
   sudo installer -pkg "$tmp_path"/"$php_version".mpkg -target /
   sudo cp -a "$tmp_path"/lib/* "$opt_lib"
@@ -51,7 +53,7 @@ add_ext_to_ini() {
 }
 
 add_daemondo() {
-  get "$opt_bin"/daemondo "$repo"/releases/latest/download/daemondo
+  get "$opt_bin"/daemondo "$repo_url/releases/latest/download/daemondo" "$cds/public/$repo/raw/files/daemondo"
   sudo chmod a+x "$opt_bin"/daemondo
   sudo ln -sf "$opt_bin"/daemondo "$usr_bin"
 }
@@ -86,7 +88,7 @@ add_pear() {
     pecl_version='v1.9.5'
   fi
   pear_repo="$github/pear/pearweb_phars"
-  sudo curl -o /tmp/pear.phar -sL "$pear_repo/raw/$pecl_version/install-pear-nozlib.phar"
+  get /tmp/pear.phar "$pear_repo/raw/$pecl_version/install-pear-nozlib.phar"
   sudo php /tmp/pear.phar -d "$opt_lib"/"$php_version" -b "$usr_bin"
   for script in pear pecl; do
     sudo "$script" config-set php_ini "$ini_file"
@@ -95,8 +97,21 @@ add_pear() {
   echo '' | sudo tee /tmp/pecl_config >/dev/null 2>&1
 }
 
-setup_php
-switch_version
-add_extensions
-add_daemondo
-add_pear
+add_imagick() {
+  get "$tmp_path-imagick.tar.zst" "$repo_url/releases/latest/download/$php_version-imagick.tar.zst" "$cds/public/$repo/raw/files/$php_version-imagick.tar.zst"
+  sudo mkdir -p /tmp/imagick
+  sudo zstd -dq "$tmp_path-imagick.tar.zst" && sudo tar -xf "$tmp_path-imagick.tar" -C /tmp/imagick
+  for pkg in /tmp/imagick/*.pkg; do
+    sudo installer -pkg "$pkg" -target /
+  done
+}
+
+if [ "$2" = "imagick" ]; then
+  add_imagick
+else
+  setup_php
+  switch_version
+  add_extensions
+  add_daemondo
+  add_pear
+fi

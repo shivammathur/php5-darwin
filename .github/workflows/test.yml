@@ -17,15 +17,17 @@ jobs:
       matrix:
         php-versions: ['5.3', '5.4', '5.5']
     name: PHP ${{ matrix.php-versions }}
+    env:
+      PHP_VERSION: ${{ matrix.php-versions }}
     steps:
       - name: Checkout
         uses: actions/checkout@v2
-
+      - name: Check zstd version
+        run: zstd --version
       - name: Setup PHP
-        run: |
-          zstd --version
-          version=${{ matrix.php-versions }}
-          bash install.sh ${version/./}
+        run: bash scripts/install.sh ${PHP_VERSION/./}
+      - name: Install imagick extension
+        run: bash scripts/install.sh ${PHP_VERSION/./} imagick
       - name: Testing PHP version
         run: |
           php --ini

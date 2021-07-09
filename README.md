@@ -32,6 +32,6 @@ curl -sSL https://github.com/shivammathur/php5-darwin/releases/latest/download/i
 
 ## License
 
-- This project is licensed under the [MIT license](http://choosealicense.com/licenses/mit/). Please see the [license file](LICENSE) for more information.
+- This project is released under the [MIT license](http://choosealicense.com/licenses/mit/). Please see the [license file](LICENSE) for more information.
 - This project uses builds from [macports](https://github.com/macports/macports-ports "macports/macports-ports") and their LICENSE can be found [here](MACPORTS_LICENSE).
 - Macports build of php-fpm uses `daemondo` binary for launching services. It is redistributed with the PHP builds and its LICENSE can be found [here](DAEMONDO_LICENSE).

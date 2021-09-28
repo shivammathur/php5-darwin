@@ -1,18 +1,4 @@
-version=$1
-php_version="php$version"
-ini_file="/opt/local/etc/php$version/php.ini"
-github="https://github.com"
-cds="https://dl.cloudsmith.io"
-repo="shivammathur/php5-darwin"
-repo_url="$github/$repo"
-php_etc_dir="/opt/local/etc/php$version"
-tmp_path="/tmp/php$version"
-opt_bin="/opt/local/bin"
-opt_inc="/opt/local/include"
-opt_sbin="/opt/local/sbin"
-opt_lib="/opt/local/lib"
-usr_bin="/usr/local/bin"
-export TERM=xterm
+#!/usr/bin/env bash
 
 get() {
   file_path=$1
@@ -105,6 +91,22 @@ add_imagick() {
     sudo installer -pkg "$pkg" -target /
   done
 }
+
+version=$1
+php_version="php$version"
+ini_file="/opt/local/etc/php$version/php.ini"
+github="https://github.com"
+cds="https://dl.cloudsmith.io"
+repo="shivammathur/php5-darwin"
+repo_url="$github/$repo"
+php_etc_dir="/opt/local/etc/php$version"
+tmp_path="/tmp/php$version"
+opt_bin="/opt/local/bin"
+opt_inc="/opt/local/include"
+opt_sbin="/opt/local/sbin"
+opt_lib="/opt/local/lib"
+usr_bin="/usr/local/bin"
+export TERM=xterm
 
 if [ "$2" = "imagick" ]; then
   add_imagick

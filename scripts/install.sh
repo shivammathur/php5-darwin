@@ -7,6 +7,7 @@ get() {
   for link in "${links[@]}"; do
     status_code=$(sudo curl -w "%{http_code}" -o "$file_path" -sL "$link")
     [ "$status_code" = "200" ] && break
+    echo "Failed to fetch $link"
   done
 }
 
@@ -25,16 +26,17 @@ setup_php() {
   zstd -dq "$tmp_path".tar.zst && tar xf "$tmp_path".tar -C /tmp
   sudo installer -pkg "$tmp_path"/"$php_version".mpkg -target /
   sudo cp -a "$tmp_path"/lib/* "$opt_lib"
-  sudo cp "$php_etc_dir"/php.ini-development "$php_etc_dir"/php.ini
-  sudo chmod 777 "$ini_file"
-  echo "date.timezone=UTC" >>"$ini_file"
+  sudo cp "$php_etc_dir"/php.ini-production "$php_etc_dir"/php.ini
+  echo '' | sudo tee "$pecl_file" >/dev/null 2>&1
+  sudo chmod 777 "$ini_file" "$ini_file"-development "$ini_file"-production
+  echo "date.timezone=UTC" | tee -a "$ini_file" "$ini_file"-development "$ini_file"-production
 }
 
 add_ext_to_ini() {
   ext_file=$1
   extension=$(basename "$ext_file" | cut -d'.' -f 1)
   if [ "$extension" != "xdebug" ]; then
-    echo "extension=$extension.so" >>"$ini_file"
+    echo "extension=$extension.so" | sudo tee "$scan_dir/20-$extension.ini"
   fi
 }
 
@@ -56,11 +58,13 @@ add_extensions() {
     to_wait+=($!)
   done
   wait "${to_wait[@]}"
+  to_wait=()
   for bin in "$tmp_path"/ext/*.so; do
     add_ext_to_ini "$bin" &
     to_wait+=($!)
   done
   wait "${to_wait[@]}"
+  sudo mv "$scan_dir/opcache.ini" "$scan_dir/10-opcache.ini"
   sudo ln -sf "$opt_bin"/php-cgi"$version" "$usr_bin"/php-cgi
   sudo ln -sf "$opt_sbin"/php-fpm"$version" "$usr_bin"/php-fpm
   sudo sed -i "" "s/VERSION/$version/" "$tmp_path"/php-fpm.conf
@@ -77,7 +81,7 @@ add_pear() {
   get /tmp/pear.phar "$pear_repo/raw/$pecl_version/install-pear-nozlib.phar"
   sudo php /tmp/pear.phar -d "$opt_lib"/"$php_version" -b "$usr_bin"
   for script in pear pecl; do
-    sudo "$script" config-set php_ini "$ini_file"
+    sudo "$script" config-set php_ini "$pecl_file"
     sudo "$script" config-set php_bin "$opt_bin/php"
   done
   echo '' | sudo tee /tmp/pecl_config >/dev/null 2>&1
@@ -94,13 +98,15 @@ add_imagick() {
 
 version=$1
 php_version="php$version"
-ini_file="/opt/local/etc/php$version/php.ini"
+ini_file="/opt/local/etc/$php_version/php.ini"
+scan_dir="/opt/local/var/db/$php_version"
+pecl_file="$scan_dir/99-pecl.ini"
 github="https://github.com"
 cds="https://dl.cloudsmith.io"
 repo="shivammathur/php5-darwin"
 repo_url="$github/$repo"
-php_etc_dir="/opt/local/etc/php$version"
-tmp_path="/tmp/php$version"
+php_etc_dir="/opt/local/etc/$php_version"
+tmp_path="/tmp/$php_version"
 opt_bin="/opt/local/bin"
 opt_inc="/opt/local/include"
 opt_sbin="/opt/local/sbin"

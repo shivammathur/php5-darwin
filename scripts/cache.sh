@@ -81,6 +81,7 @@ add_pear() {
     sudo "$script" config-set php_ini "$pecl_file"
     sudo "$script" config-set php_bin "$opt_bin/php"
   done
+  sudo cp ~/.pearrc "$php_etc_dir"
   echo '' | sudo tee /tmp/pecl_config >/dev/null 2>&1
 }
 
@@ -107,10 +108,6 @@ php_version="php$version"
 ini_file="/opt/local/etc/$php_version/php.ini"
 scan_dir="/opt/local/var/db/$php_version"
 pecl_file="$scan_dir/99-pecl.ini"
-github="https://github.com"
-cds="https://dl.cloudsmith.io"
-repo="shivammathur/php5-darwin"
-repo_url="$github/$repo"
 php_etc_dir="/opt/local/etc/$php_version"
 tmp_path="/tmp/$php_version"
 opt_bin="/opt/local/bin"
@@ -118,6 +115,11 @@ opt_inc="/opt/local/include"
 opt_lib="/opt/local/lib"
 usr_bin="/usr/local/bin"
 opt_sbin="/opt/local/sbin"
+github="https://github.com"
+cds="https://dl.cloudsmith.io"
+repo="shivammathur/php5-darwin"
+repo_url="$github/$repo"
+
 export TERM=xterm
 sudo rm -rf /opt 2>/dev/null
 

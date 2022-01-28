@@ -1,0 +1,49 @@
+name: Cache
+on:
+  workflow_dispatch:
+jobs:
+  run:
+    runs-on: macos-10.15
+    strategy:
+      fail-fast: false
+      matrix:
+        php-versions: ['5.3', '5.4', '5.5']
+    name: PHP ${{ matrix.php-versions }}
+    env:
+      PHP_VERSION: ${{ matrix.php-versions }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Check zstd version
+        run: zstd --version
+      - name: Cache Imagick
+        run: bash scripts/cache.sh ${PHP_VERSION/./} imagick
+      - name: Cache PHP
+        run: bash scripts/cache.sh ${PHP_VERSION/./}
+      - name: Smoke Test
+        run: |
+          php -v
+          php -m
+      - name: Install cloudsmith-cli
+        run: |
+          pip3 install --upgrade cloudsmith-cli
+          sudo cp ./scripts/cds /usr/local/bin/cds
+          sudo sed -i '' "s|REPO|${{ github.repository }}|" /usr/local/bin/cds
+          sudo chmod a+x /usr/local/bin/cds
+      - name: Update packages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+        run: |
+          set -x
+          assets=()
+          for asset in /tmp/builds/*.zst; do
+            assets+=("$asset")
+          done
+          release=builds
+          if ! gh release view "$release"; then
+            gh release create "$release" "${assets[@]}" -t "$release" -n "$release"
+          else
+            gh release upload "$release" "${assets[@]}" --clobber
+          fi
+          echo "${assets[@]}" | xargs -n 1 -P 2 cds

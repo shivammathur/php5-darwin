@@ -1,6 +1,6 @@
 name: Test
 on:
-  repository_dispatch:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -11,12 +11,12 @@ on:
       - develop
 jobs:
   run:
-    runs-on: macos-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         php-versions: ['5.3', '5.4', '5.5']
-    name: PHP ${{ matrix.php-versions }}
+        os: [macos-11, macos-10.15]
     env:
       PHP_VERSION: ${{ matrix.php-versions }}
     steps:
@@ -35,18 +35,46 @@ jobs:
           phpize --version
           php-config --version
           php -r "if(strpos(phpversion(), '${{ matrix.php-versions }}') === false) {throw new Exception('Wrong PHP version Installed');}"
+      - name: Testing PECL
+        run: |
+          pecl -V
+          sudo pecl install msgpack-0.5.7
       - name: Testing PHP extensions
         run: |
           php -m
           version=${{ matrix.php-versions }}
-          for bin in /tmp/php"${version/./}"/ext/*.so; do
+          ext_dir=$(php -i | grep -Ei "extension_dir => /" | sed -e "s|.*=> s*||")
+          for bin in "$ext_dir"/*.so; do
             extension=$(basename "$bin" | cut -d'.' -f 1)
+            [ "$extension" = "opcache" ] && extension="Zend OPcache"
             ([ "$extension" != "xdebug" ] && php -r "if(! extension_loaded('$extension')) {throw new Exception('$extension not found');}") &
             to_wait+=( $! )
           done
           wait "${to_wait[@]}"
           php -r "if(! extension_loaded('Zend OPcache')) {throw new Exception('Zend OPcache not found');}"
-      - name: Testing PECL version
-        run: pecl -V
       - name: Testing SSL in file_get_contents
         run: php -r "echo file_get_contents('https://repo.packagist.org/packages.json');"
+  upload:
+    needs: run
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Install cloudsmith-cli
+        run: |
+          pip install --upgrade cloudsmith-cli
+          sudo cp ./scripts/cds /usr/local/bin/cds
+          sudo sed -i "s|REPO|${{ github.repository }}|" /usr/local/bin/cds
+          sudo chmod a+x /usr/local/bin/cds
+      - name: Update script
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+        run: |
+          release=builds
+          if ! gh release view "$release"; then
+            gh release create "$release" scripts/install.sh -t "$release" -n "$release"
+          else
+            gh release upload "$release" scripts/install.sh --clobber
+          fi
+          cds ./scripts/install.sh

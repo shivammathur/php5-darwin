@@ -21,7 +21,7 @@ jobs:
       PHP_VERSION: ${{ matrix.php-versions }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Check zstd version
         run: zstd --version
       - name: Setup PHP
@@ -59,7 +59,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Install cloudsmith-cli
         run: |
           pip install --upgrade cloudsmith-cli

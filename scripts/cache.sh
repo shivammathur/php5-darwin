@@ -26,6 +26,7 @@ setup_php() {
   zstd -dq "$tmp_path".tar.zst && tar xf "$tmp_path".tar -C /tmp
   sudo installer -verbose -pkg "$tmp_path"/"$php_version".mpkg -target /
   sudo cp -a "$tmp_path"/lib/* "$opt_lib"
+  sudo cp -a "$tmp_path"/libexec/* "$opt_libexec"
   sudo cp "$php_etc_dir"/php.ini-production "$php_etc_dir"/php.ini
   echo '' | sudo tee "$pecl_file" >/dev/null 2>&1
   sudo chmod 777 "$ini_file" "$ini_file"-development "$ini_file"-production
@@ -113,6 +114,7 @@ tmp_path="/tmp/$php_version"
 opt_bin="/opt/local/bin"
 opt_inc="/opt/local/include"
 opt_lib="/opt/local/lib"
+opt_libexec="/opt/local/libexec"
 usr_bin="/usr/local/bin"
 opt_sbin="/opt/local/sbin"
 github="https://github.com"

@@ -1,49 +1,298 @@
-name: Cache
+name: Refresh PHP cache
+
 on:
   workflow_dispatch:
+    inputs:
+      runner:
+        description: Intel macOS runner used to assemble and validate the caches
+        required: true
+        default: macos-15-intel
+        type: choice
+        options:
+          - macos-15-intel
+          - macos-14-intel
+      publish:
+        description: Replace the cache assets in the builds release and Cloudsmith
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: refresh-php-cache
+  cancel-in-progress: false
+
 jobs:
-  run:
-    runs-on: macos-10.15
+  runtime:
+    name: Package curl runtime on ${{ inputs.runner }}
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 30
+    steps:
+      - name: Check runner
+        env:
+          PUBLISH: ${{ inputs.publish }}
+          SELECTED_RUNNER: ${{ inputs.runner }}
+        run: |
+          test "$(uname -m)" = "x86_64"
+          if [[ "$PUBLISH" == "true" ]]; then
+            test "$SELECTED_RUNNER" = "macos-14-intel"
+          fi
+          sw_vers
+
+      - name: Install MacPorts
+        run: |
+          macos_version="$(sw_vers -productVersion | cut -d. -f1)"
+          case "$macos_version" in
+            14) package=MacPorts-2.12.5-14-Sonoma.pkg ;;
+            15) package=MacPorts-2.12.5-15-Sequoia.pkg ;;
+            *) echo "Unsupported macOS version: $macos_version" >&2; exit 1 ;;
+          esac
+          backup="/opt/local.before-cache-refresh-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-runtime"
+          state="$RUNNER_TEMP/opt-local-runtime-state"
+          rm -f "$state"
+          test ! -e "$backup"
+          # Recover /opt/local once from cache workflow runs created before per-job restoration.
+          if [[ -d /opt/local.preinstalled ]]; then
+            sudo rm -rf /opt/local
+            sudo mv /opt/local.preinstalled /opt/local
+          fi
+          if [[ -d /opt/local ]]; then
+            sudo mv /opt/local "$backup"
+            echo present > "$state"
+          else
+            echo absent > "$state"
+          fi
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/macports.pkg" "https://github.com/macports/macports-base/releases/download/v2.12.5/$package"
+          sudo installer -pkg "$RUNNER_TEMP/macports.pkg" -target /
+          echo /opt/local/bin >> "$GITHUB_PATH"
+
+      - name: Install official MacPorts curl archives
+        run: |
+          sudo port -N sync
+          port info --version curl | tee "$RUNNER_TEMP/curl-version.txt"
+          grep -q '8.21.0' "$RUNNER_TEMP/curl-version.txt"
+          # Binary-only mode fails instead of compiling if an official archive is unavailable.
+          sudo port -N -b install curl +ssl
+
+      - name: Package installed runtime files
+        run: |
+          runtime_dir="$RUNNER_TEMP/curl-runtime"
+          registered_files="$RUNNER_TEMP/registered-files.txt"
+          archive_files="$RUNNER_TEMP/archive-files.txt"
+          mkdir -p "$runtime_dir"
+          port -q installed active | tee "$runtime_dir/macports-ports.txt"
+          while read -r port _; do
+            port -q contents "$port" | sed 's/^  //' >> "$registered_files"
+          done < "$runtime_dir/macports-ports.txt"
+          sort -u -o "$registered_files" "$registered_files"
+          while IFS= read -r path; do
+            case "$path" in
+              /opt/local/*) ;;
+              *) echo "Unexpected MacPorts path: $path" >&2; exit 1 ;;
+            esac
+            if [[ -d "$path" && ! -L "$path" ]]; then
+              continue
+            fi
+            if [[ ! -e "$path" && ! -L "$path" ]]; then
+              echo "Registered file is missing: $path" >&2
+              exit 1
+            fi
+            printf '.%s\n' "$path" >> "$archive_files"
+          done < "$registered_files"
+          grep -qx './opt/local/lib/libcurl.4.dylib' "$archive_files"
+          sudo tar -czf "$runtime_dir/curl-runtime.tar.gz" -C / -T "$archive_files"
+          sudo chown "$(id -u):$(id -g)" "$runtime_dir/curl-runtime.tar.gz"
+          (
+            cd "$runtime_dir"
+            shasum -a 256 curl-runtime.tar.gz > SHA256SUMS
+          )
+          cat "$runtime_dir/SHA256SUMS"
+
+      - name: Upload curl runtime
+        uses: actions/upload-artifact@v7
+        with:
+          name: curl-runtime-${{ inputs.runner }}
+          path: ${{ runner.temp }}/curl-runtime
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Restore runner MacPorts
+        if: ${{ always() }}
+        run: |
+          backup="/opt/local.before-cache-refresh-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-runtime"
+          state="$RUNNER_TEMP/opt-local-runtime-state"
+          [[ -f "$state" ]] || exit 0
+          sudo rm -rf /opt/local
+          if [[ "$(cat "$state")" == "present" ]]; then
+            test -e "$backup"
+            sudo mv "$backup" /opt/local
+          fi
+
+  build:
+    name: PHP ${{ matrix.php-version }} on ${{ inputs.runner }}
+    needs: runtime
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        php-versions: ['5.3', '5.4', '5.5']
-    name: PHP ${{ matrix.php-versions }}
+        php-version: ['53', '54', '55']
     env:
-      PHP_VERSION: ${{ matrix.php-versions }}
+      PHP_VERSION: ${{ matrix.php-version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
-      - name: Check zstd version
-        run: zstd --version
-      - name: Cache Imagick
-        run: bash scripts/cache.sh ${PHP_VERSION/./} imagick
-      - name: Cache PHP
-        run: bash scripts/cache.sh ${PHP_VERSION/./}
-      - name: Smoke Test
+        uses: actions/checkout@v7
+
+      - name: Download curl runtime
+        uses: actions/download-artifact@v8
+        with:
+          name: curl-runtime-${{ inputs.runner }}
+          path: ${{ runner.temp }}/runtime
+
+      - name: Refresh published cache and compare
         run: |
+          test "$(uname -m)" = "x86_64"
+          command -v zstd || brew install zstd
+          (
+            cd "$RUNNER_TEMP/runtime"
+            shasum -a 256 -c SHA256SUMS
+          )
+          source_cache="$RUNNER_TEMP/php${PHP_VERSION}-cache-current.tar.zst"
+          curl -fsSL --retry 3 -o "$source_cache" "https://github.com/$GITHUB_REPOSITORY/releases/download/builds/php${PHP_VERSION}-cache.tar.zst"
+          SOURCE_CACHE="$source_cache" \
+            RUNTIME_ARCHIVE="$RUNNER_TEMP/runtime/curl-runtime.tar.gz" \
+            BUILD_DIR="$RUNNER_TEMP/builds" \
+            REPORT_DIR="$RUNNER_TEMP/comparison" \
+            PREINSTALLED_DIR="/opt/local.before-cache-refresh-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${PHP_VERSION}" \
+            OPT_LOCAL_STATE_FILE="$RUNNER_TEMP/opt-local-build-state" \
+            bash scripts/refresh-cache.sh "$PHP_VERSION"
+          echo /opt/local/bin >> "$GITHUB_PATH"
+
+      - name: Upload cache comparison
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: php${{ env.PHP_VERSION }}-comparison-${{ inputs.runner }}
+          path: ${{ runner.temp }}/comparison
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Validate PHP and curl
+        run: |
+          php --ini
           php -v
           php -m
-      - name: Install cloudsmith-cli
-        run: |
-          pip3 install --upgrade cloudsmith-cli
-          sudo cp ./scripts/cds /usr/local/bin/cds
-          sudo sed -i '' "s|REPO|${{ github.repository }}|" /usr/local/bin/cds
-          sudo chmod a+x /usr/local/bin/cds
-      - name: Update packages
+          php -r 'if (!extension_loaded("curl")) { throw new Exception("curl extension not loaded"); }'
+          # shellcheck disable=SC2016
+          ssl_version="$(php -r '$curl = curl_version(); echo $curl["ssl_version"];')"
+          echo "curl SSL backend: $ssl_version"
+          case "$ssl_version" in
+            OpenSSL/*) ;;
+            *) echo "Expected the OpenSSL curl backend" >&2; exit 1 ;;
+          esac
+          file /opt/local/lib/libcurl.4.dylib | grep -q x86_64
+          otool -L /opt/local/lib/libcurl.4.dylib
+          # shellcheck disable=SC2016
+          php -r '$curl = curl_init("https://repo.packagist.org/packages.json"); curl_setopt($curl, CURLOPT_RETURNTRANSFER, true); $body = curl_exec($curl); if ($body === false) { throw new Exception(curl_error($curl)); } if (curl_getinfo($curl, CURLINFO_HTTP_CODE) !== 200) { throw new Exception("Unexpected HTTP status"); }'
+
+      - name: Validate Composer 2.2.29
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+          COMPOSER_HOME: ${{ runner.temp }}/composer
         run: |
-          set -x
-          assets=()
-          for asset in /tmp/builds/*.zst; do
-            assets+=("$asset")
-          done
-          release=builds
-          if ! gh release view "$release"; then
-            gh release create "$release" "${assets[@]}" -t "$release" -n "$release"
-          else
-            gh release upload "$release" "${assets[@]}" --clobber
+          composer="$RUNNER_TEMP/composer.phar"
+          curl -fsSL --retry 3 -o "$composer" https://getcomposer.org/download/2.2.29/composer.phar
+          echo "f38623ebdeeab5905b24b048fd32804150e598436cc43db9fc12362894c1279d  $composer" | shasum -a 256 -c -
+          php "$composer" --version
+          php "$composer" show --platform | tee "$RUNNER_TEMP/composer-platform.txt"
+          grep -Eq '^lib-curl-openssl[[:space:]]' "$RUNNER_TEMP/composer-platform.txt"
+          if grep -Eq '^lib-curl-[^[:space:]]*[()]' "$RUNNER_TEMP/composer-platform.txt"; then
+            echo "Composer generated an invalid lib-curl package name" >&2
+            exit 1
           fi
-          echo "${assets[@]}" | xargs -n 1 -P 2 cds
+          php "$composer" global require --no-interaction --no-progress psr/log:1.1.4
+          test -f "$COMPOSER_HOME/vendor/psr/log/Psr/Log/LoggerInterface.php"
+
+      - name: Upload candidate cache
+        uses: actions/upload-artifact@v7
+        with:
+          name: php${{ env.PHP_VERSION }}-cache-${{ inputs.runner }}
+          path: ${{ runner.temp }}/builds/php${{ env.PHP_VERSION }}-cache.tar.zst
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Restore runner MacPorts
+        if: ${{ always() }}
+        run: |
+          backup="/opt/local.before-cache-refresh-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${PHP_VERSION}"
+          state="$RUNNER_TEMP/opt-local-build-state"
+          [[ -f "$state" ]] || exit 0
+          sudo rm -rf /opt/local
+          if [[ "$(cat "$state")" == "present" ]]; then
+            test -e "$backup"
+            sudo mv "$backup" /opt/local
+          fi
+
+  publish:
+    name: Publish caches
+    if: ${{ inputs.publish }}
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download candidate caches
+        uses: actions/download-artifact@v8
+        with:
+          pattern: php*-cache-${{ inputs.runner }}
+          path: ${{ runner.temp }}/builds
+          merge-multiple: true
+
+      - name: Verify candidate set
+        run: |
+          test "$(find "$RUNNER_TEMP/builds" -maxdepth 1 -name 'php5[3-5]-cache.tar.zst' | wc -l)" -eq 3
+          sha256sum "$RUNNER_TEMP"/builds/*.tar.zst
+
+      - name: Back up published caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/backup"
+          gh release download builds --repo "$GITHUB_REPOSITORY" --pattern 'php5[3-5]-cache.tar.zst' --dir "$RUNNER_TEMP/backup"
+
+      - name: Upload cache backup
+        uses: actions/upload-artifact@v7
+        with:
+          name: php-cache-backup-${{ github.run_id }}
+          path: ${{ runner.temp }}/backup/*.tar.zst
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Install Cloudsmith CLI
+        run: |
+          python3 -m venv "$RUNNER_TEMP/cloudsmith"
+          "$RUNNER_TEMP/cloudsmith/bin/pip" install --upgrade pip cloudsmith-cli
+          echo "$RUNNER_TEMP/cloudsmith/bin" >> "$GITHUB_PATH"
+
+      - name: Publish caches
+        env:
+          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for asset in "$RUNNER_TEMP"/builds/*.tar.zst; do
+            name="$(basename "$asset")"
+            cloudsmith push raw "$GITHUB_REPOSITORY" "$asset" --republish --summary "$name" --description "$name"
+          done
+          gh release upload builds --repo "$GITHUB_REPOSITORY" "$RUNNER_TEMP"/builds/*.tar.zst --clobber
+
+      - name: Verify published GitHub assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/published"
+          for asset in "$RUNNER_TEMP"/builds/*.tar.zst; do
+            name="$(basename "$asset")"
+            gh release download builds --repo "$GITHUB_REPOSITORY" --pattern "$name" --dir "$RUNNER_TEMP/published"
+            test "$(sha256sum "$asset" | cut -d' ' -f1)" = "$(sha256sum "$RUNNER_TEMP/published/$name" | cut -d' ' -f1)"
+          done

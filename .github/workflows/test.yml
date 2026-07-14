@@ -11,12 +11,11 @@ on:
       - develop
 jobs:
   run:
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-15-intel
     strategy:
       fail-fast: false
       matrix:
         php-versions: ['5.3', '5.4', '5.5']
-        os: [macos-12, macos-11, macos-10.15]
     env:
       PHP_VERSION: ${{ matrix.php-versions }}
     steps:

@@ -20,13 +20,13 @@ jobs:
       PHP_VERSION: ${{ matrix.php-versions }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
       - name: Check zstd version
         run: zstd --version
       - name: Setup PHP
-        run: bash scripts/install.sh ${PHP_VERSION/./}
+        run: bash scripts/install.sh "${PHP_VERSION/./}"
       - name: Install imagick extension
-        run: bash scripts/install.sh ${PHP_VERSION/./} imagick
+        run: bash scripts/install.sh "${PHP_VERSION/./}" imagick
       - name: Testing PHP version
         run: |
           php --ini
@@ -34,14 +34,9 @@ jobs:
           phpize --version
           php-config --version
           php -r "if(strpos(phpversion(), '${{ matrix.php-versions }}') === false) {throw new Exception('Wrong PHP version Installed');}"
-      - name: Testing PECL
-        run: |
-          pecl -V
-          sudo pecl install msgpack-0.5.7
       - name: Testing PHP extensions
         run: |
           php -m
-          version=${{ matrix.php-versions }}
           ext_dir=$(php -i | grep -Ei "extension_dir => /" | sed -e "s|.*=> s*||")
           for bin in "$ext_dir"/*.so; do
             extension=$(basename "$bin" | cut -d'.' -f 1)
@@ -53,12 +48,18 @@ jobs:
           php -r "if(! extension_loaded('Zend OPcache')) {throw new Exception('Zend OPcache not found');}"
       - name: Testing SSL in file_get_contents
         run: php -r "echo file_get_contents('https://repo.packagist.org/packages.json');"
+      - name: Testing PECL
+        run: |
+          pecl -V
+          curl -fsSL --retry 3 -o /tmp/msgpack-0.5.7.tgz https://pecl.php.net/get/msgpack-0.5.7.tgz
+          sudo pecl install /tmp/msgpack-0.5.7.tgz
+          php -r "if(! extension_loaded('msgpack')) {throw new Exception('msgpack not found');}"
   upload:
     needs: run
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
       - name: Install cloudsmith-cli
         run: |
           pip install --upgrade cloudsmith-cli

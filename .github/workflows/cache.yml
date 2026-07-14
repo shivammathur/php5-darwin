@@ -214,6 +214,26 @@ jobs:
           php "$composer" global require --no-interaction --no-progress psr/log:1.1.4
           test -f "$COMPOSER_HOME/vendor/psr/log/Psr/Log/LoggerInterface.php"
 
+      - name: Validate published Imagick cache
+        run: |
+          bash scripts/install.sh "$PHP_VERSION" imagick
+          modules="$(php -m 2>&1)"
+          printf '%s\n' "$modules"
+          if grep -Eq '^PHP (Warning|Startup|Deprecated|Notice)' <<< "$modules"; then
+            echo "PHP emitted a startup message after installing Imagick" >&2
+            exit 1
+          fi
+          ext_dir="$(php -i | sed -n 's|^extension_dir => \(/.*\) =>.*|\1|p' | head -1)"
+          for bin in "$ext_dir"/*.so; do
+            extension="$(basename "$bin" .so)"
+            case "$extension" in
+              opcache) extension='Zend OPcache' ;;
+              xdebug) continue ;;
+            esac
+            php -r "if (!extension_loaded('$extension')) { throw new Exception('$extension not loaded'); }"
+          done
+          php -r 'if (!extension_loaded("imagick")) { throw new Exception("imagick not loaded"); }'
+
       - name: Upload candidate cache
         uses: actions/upload-artifact@v7
         with:

@@ -11,49 +11,89 @@ on:
       - develop
 jobs:
   run:
-    runs-on: macos-15-intel
+    name: PHP ${{ matrix.php-versions }} on ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         php-versions: ['5.3', '5.4', '5.5']
+        runner: [macos-15, macos-15-intel]
     env:
       PHP_VERSION: ${{ matrix.php-versions }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-      - name: Check zstd version
-        run: zstd --version
+
+      - name: Check isolated runner
+        run: |
+          case "${{ matrix.runner }}" in
+            macos-15)
+              test "$(uname -m)" = "arm64"
+              /usr/bin/arch -x86_64 /usr/bin/true
+              ;;
+            macos-15-intel)
+              test "$(uname -m)" = "x86_64"
+              ;;
+          esac
+          test ! -e /opt/local
+          zstd --version
+
       - name: Setup PHP
         run: bash scripts/install.sh "${PHP_VERSION/./}"
-      - name: Install imagick extension
-        run: bash scripts/install.sh "${PHP_VERSION/./}" imagick
-      - name: Testing PHP version
+
+      - name: Test PHP and extensions
         run: |
           php --ini
           php -v
           phpize --version
           php-config --version
-          php -r "if(strpos(phpversion(), '${{ matrix.php-versions }}') === false) {throw new Exception('Wrong PHP version Installed');}"
-      - name: Testing PHP extensions
-        run: |
-          php -m
-          ext_dir=$(php -i | grep -Ei "extension_dir => /" | sed -e "s|.*=> s*||")
+          php -r "if (strpos(phpversion(), '$PHP_VERSION') === false) { throw new Exception('Wrong PHP version installed'); }"
+          modules="$(php -m 2>&1)"
+          printf '%s\n' "$modules"
+          if grep -Eq '^PHP (Warning|Startup|Deprecated|Notice)' <<< "$modules"; then
+            echo "PHP emitted a startup message" >&2
+            exit 1
+          fi
+          sudo /opt/local/sbin/php-fpm"${PHP_VERSION/./}" -t
+          ext_dir="$(php -i | sed -n 's|^extension_dir => \(/.*\) =>.*|\1|p' | head -1)"
           for bin in "$ext_dir"/*.so; do
-            extension=$(basename "$bin" | cut -d'.' -f 1)
-            [ "$extension" = "opcache" ] && extension="Zend OPcache"
-            ([ "$extension" != "xdebug" ] && php -r "if(! extension_loaded('$extension')) {throw new Exception('$extension not found');}") &
-            to_wait+=( $! )
+            extension="$(basename "$bin" .so)"
+            case "$extension" in
+              opcache) extension='Zend OPcache' ;;
+              xdebug) continue ;;
+            esac
+            php -r "if (!extension_loaded('$extension')) { throw new Exception('$extension not loaded'); }"
           done
-          wait "${to_wait[@]}"
-          php -r "if(! extension_loaded('Zend OPcache')) {throw new Exception('Zend OPcache not found');}"
-      - name: Testing SSL in file_get_contents
+          php -r "if (!extension_loaded('Zend OPcache')) { throw new Exception('Zend OPcache not found'); }"
+          bash scripts/audit-dependencies.sh
+
+      - name: Install and test Imagick
+        run: |
+          bash scripts/install.sh "${PHP_VERSION/./}" imagick
+          modules="$(php -m 2>&1)"
+          printf '%s\n' "$modules"
+          if grep -Eq '^PHP (Warning|Startup|Deprecated|Notice)' <<< "$modules"; then
+            echo "PHP emitted a startup message after installing Imagick" >&2
+            exit 1
+          fi
+          php -r "if (!extension_loaded('imagick')) { throw new Exception('imagick not found'); }"
+          imagick_path="$(php -r 'echo ini_get("extension_dir") . "/imagick.so";')"
+          test -f "$imagick_path"
+          file "$imagick_path" | grep -q x86_64
+          file "$(command -v convert)" | grep -q x86_64
+          convert -list format | grep -Eq '^[[:space:]]*HEI(C|F)'
+          bash scripts/audit-dependencies.sh
+
+      - name: Test SSL in file_get_contents
         run: php -r "echo file_get_contents('https://repo.packagist.org/packages.json');"
-      - name: Testing PECL
+
+      - name: Test PECL
         run: |
           pecl -V
           curl -fsSL --retry 3 -o /tmp/msgpack-0.5.7.tgz https://pecl.php.net/get/msgpack-0.5.7.tgz
           sudo pecl install /tmp/msgpack-0.5.7.tgz
-          php -r "if(! extension_loaded('msgpack')) {throw new Exception('msgpack not found');}"
+          php -r "if (!extension_loaded('msgpack')) { throw new Exception('msgpack not found'); }"
+
   upload:
     needs: run
     runs-on: ubuntu-latest

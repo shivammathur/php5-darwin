@@ -127,8 +127,18 @@ snapshot() {
 
 compare_file() {
   local name=$1
-  local baseline=${2:-old}
-  if ! diff -u "$report_dir/$baseline/$name" "$report_dir/new/$name" >"$report_dir/$name.diff"; then
+  if ! diff -u "$report_dir/source/$name" "$report_dir/new/$name" >"$report_dir/$name.diff"; then
+    comparison_status=1
+  fi
+}
+
+compare_subset() {
+  local name=$1
+  local removed="$report_dir/removed-$name"
+  sort -u "$report_dir/source/$name" >"$report_dir/source/$name.sorted"
+  sort -u "$report_dir/new/$name" >"$report_dir/new/$name.sorted"
+  comm -23 "$report_dir/source/$name.sorted" "$report_dir/new/$name.sorted" >"$removed"
+  if [[ -s "$removed" ]]; then
     comparison_status=1
   fi
 }
@@ -165,18 +175,20 @@ snapshot "$report_dir/new"
 comparison_status=0
 for name in \
   php-version.txt \
-  stable-php-modules.txt \
   php-ini.txt \
-  stable-extension-versions.txt \
-  stable-extension-info.txt \
-  stable-ini-settings.txt; do
-  compare_file "$name" source
+  php-artifacts.sha256; do
+  compare_file "$name"
 done
-compare_file php-artifacts.sha256 source
+for name in \
+  stable-php-modules.txt \
+  stable-extension-versions.txt \
+  stable-ini-settings.txt; do
+  compare_subset "$name"
+done
 
 comm -13 "$report_dir/source/startup-messages.txt" "$report_dir/new/startup-messages.txt" >"$report_dir/new-startup-messages.txt"
 comm -23 "$report_dir/source/startup-messages.txt" "$report_dir/new/startup-messages.txt" >"$report_dir/resolved-startup-messages.txt"
-if [[ -s "$report_dir/new-startup-messages.txt" ]]; then
+if [[ -s "$report_dir/new/startup-messages.txt" ]]; then
   comparison_status=1
 fi
 
@@ -186,18 +198,15 @@ if [[ -s "$report_dir/missing-paths.txt" ]]; then
   comparison_status=1
 fi
 diff -u "$report_dir/source/php-info.txt" "$report_dir/new/php-info.txt" >"$report_dir/php-info.diff" || true
+diff -u "$report_dir/source/stable-extension-info.txt" "$report_dir/new/stable-extension-info.txt" >"$report_dir/stable-extension-info.diff" || true
 diff -u "$report_dir/source/runtime-extension-info.txt" "$report_dir/new/runtime-extension-info.txt" >"$report_dir/runtime-extension-info.diff" || true
 diff -u "$report_dir/source/curl-version.txt" "$report_dir/new/curl-version.txt" >"$report_dir/curl-version.diff" || true
-if cmp -s "$report_dir/source/curl-version.txt" "$report_dir/new/curl-version.txt"; then
-  echo "The curl runtime did not change" >&2
-  comparison_status=1
-fi
 
 {
   echo "PHP $version cache comparison"
   echo "Published stable extensions: $(wc -l <"$report_dir/source/stable-extension-versions.txt")"
   echo "New modules: $(wc -l <"$report_dir/new/extension-versions.txt")"
-  echo "New startup messages: $(wc -l <"$report_dir/new-startup-messages.txt")"
+  echo "Remaining startup messages: $(wc -l <"$report_dir/new/startup-messages.txt")"
   echo "Resolved startup messages: $(wc -l <"$report_dir/resolved-startup-messages.txt")"
   echo "Published cache paths: $(wc -l <"$report_dir/source/all-paths.txt")"
   echo "New paths: $(wc -l <"$report_dir/new/all-paths.txt")"

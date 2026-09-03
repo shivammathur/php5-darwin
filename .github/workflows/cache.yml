@@ -3,14 +3,6 @@ name: Refresh PHP cache
 on:
   workflow_dispatch:
     inputs:
-      runner:
-        description: Intel macOS runner used to assemble and validate the caches
-        required: true
-        default: macos-15-intel
-        type: choice
-        options:
-          - macos-15-intel
-          - macos-14-intel
       publish:
         description: Replace the cache assets in the builds release and Cloudsmith
         required: true
@@ -26,99 +18,60 @@ concurrency:
 
 jobs:
   runtime:
-    name: Package curl runtime on ${{ inputs.runner }}
-    runs-on: ${{ inputs.runner }}
-    timeout-minutes: 30
+    name: Package x86_64 runtime on arm64
+    runs-on: macos-15
+    timeout-minutes: 45
     steps:
-      - name: Check runner
-        env:
-          PUBLISH: ${{ inputs.publish }}
-          SELECTED_RUNNER: ${{ inputs.runner }}
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Check arm64 runner and Rosetta
         run: |
-          test "$(uname -m)" = "x86_64"
-          if [[ "$PUBLISH" == "true" ]]; then
-            test "$SELECTED_RUNNER" = "macos-14-intel"
-          fi
+          test "$(uname -m)" = "arm64"
+          /usr/bin/arch -x86_64 /usr/bin/true
           sw_vers
 
-      - name: Install MacPorts
+      - name: Prepare PHP build root
         run: |
-          macos_version="$(sw_vers -productVersion | cut -d. -f1)"
-          case "$macos_version" in
-            14) package=MacPorts-2.12.5-14-Sonoma.pkg ;;
-            15) package=MacPorts-2.12.5-15-Sequoia.pkg ;;
-            *) echo "Unsupported macOS version: $macos_version" >&2; exit 1 ;;
-          esac
           backup="/opt/local.before-cache-refresh-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-runtime"
           state="$RUNNER_TEMP/opt-local-runtime-state"
-          rm -f "$state"
           test ! -e "$backup"
-          # Recover /opt/local once from cache workflow runs created before per-job restoration.
-          if [[ -d /opt/local.preinstalled ]]; then
-            sudo rm -rf /opt/local
-            sudo mv /opt/local.preinstalled /opt/local
-          fi
           if [[ -d /opt/local ]]; then
             sudo mv /opt/local "$backup"
             echo present > "$state"
           else
             echo absent > "$state"
           fi
-          curl -fsSL --retry 3 -o "$RUNNER_TEMP/macports.pkg" "https://github.com/macports/macports-base/releases/download/v2.12.5/$package"
-          sudo installer -pkg "$RUNNER_TEMP/macports.pkg" -target /
-          echo /opt/local/bin >> "$GITHUB_PATH"
+          source_cache="$RUNNER_TEMP/php55-cache-current.tar.zst"
+          curl -fsSL --retry 3 -o "$source_cache" "https://github.com/$GITHUB_REPOSITORY/releases/download/builds/php55-cache.tar.zst"
+          zstd -dc "$source_cache" | sudo tar -xf - -C /
+          command -v pkg-config || brew install pkgconf
+          command -v cargo
+          command -v rustup
 
-      - name: Install official MacPorts curl archives
+      - name: Package compatible runtime libraries
         run: |
-          sudo port -N sync
-          port info --version curl | tee "$RUNNER_TEMP/curl-version.txt"
-          grep -q '8.21.0' "$RUNNER_TEMP/curl-version.txt"
-          # Binary-only mode fails instead of compiling if an official archive is unavailable.
-          sudo port -N -b install curl +ssl
-
-      - name: Package installed runtime files
-        run: |
-          runtime_dir="$RUNNER_TEMP/curl-runtime"
-          registered_files="$RUNNER_TEMP/registered-files.txt"
-          archive_files="$RUNNER_TEMP/archive-files.txt"
+          runtime_dir="$RUNNER_TEMP/php-runtime"
           mkdir -p "$runtime_dir"
-          port -q installed active | tee "$runtime_dir/macports-ports.txt"
-          while read -r port _; do
-            port -q contents "$port" | sed 's/^  //' >> "$registered_files"
-          done < "$runtime_dir/macports-ports.txt"
-          sort -u -o "$registered_files" "$registered_files"
-          while IFS= read -r path; do
-            case "$path" in
-              /opt/local/*) ;;
-              *) echo "Unexpected MacPorts path: $path" >&2; exit 1 ;;
-            esac
-            if [[ -d "$path" && ! -L "$path" ]]; then
-              continue
-            fi
-            if [[ ! -e "$path" && ! -L "$path" ]]; then
-              echo "Registered file is missing: $path" >&2
-              exit 1
-            fi
-            printf '.%s\n' "$path" >> "$archive_files"
-          done < "$registered_files"
-          grep -qx './opt/local/lib/libcurl.4.dylib' "$archive_files"
-          sudo tar -czf "$runtime_dir/curl-runtime.tar.gz" -C / -T "$archive_files"
-          sudo chown "$(id -u):$(id -g)" "$runtime_dir/curl-runtime.tar.gz"
+          RUNTIME_WORK_DIR="$RUNNER_TEMP/runtime-work" \
+            bash scripts/package-runtime.sh "$runtime_dir/php-runtime.tar.gz"
           (
             cd "$runtime_dir"
-            shasum -a 256 curl-runtime.tar.gz > SHA256SUMS
+            shasum -a 256 php-runtime.tar.gz > SHA256SUMS
+            tar -tzf php-runtime.tar.gz | sort > runtime-files.txt
           )
           cat "$runtime_dir/SHA256SUMS"
+          cat "$runtime_dir/runtime-files.txt"
 
-      - name: Upload curl runtime
+      - name: Upload runtime
         uses: actions/upload-artifact@v7
         with:
-          name: curl-runtime-${{ inputs.runner }}
-          path: ${{ runner.temp }}/curl-runtime
+          name: php-runtime-arm64
+          path: ${{ runner.temp }}/php-runtime
           if-no-files-found: error
           retention-days: 14
 
-      - name: Restore runner MacPorts
+      - name: Restore runner state
         if: ${{ always() }}
         run: |
           backup="/opt/local.before-cache-refresh-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-runtime"
@@ -131,9 +84,9 @@ jobs:
           fi
 
   build:
-    name: PHP ${{ matrix.php-version }} on ${{ inputs.runner }}
+    name: PHP ${{ matrix.php-version }} on arm64
     needs: runtime
-    runs-on: ${{ inputs.runner }}
+    runs-on: macos-15
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -145,16 +98,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Download curl runtime
+      - name: Download runtime
         uses: actions/download-artifact@v8
         with:
-          name: curl-runtime-${{ inputs.runner }}
+          name: php-runtime-arm64
           path: ${{ runner.temp }}/runtime
 
       - name: Refresh published cache and compare
         run: |
-          test "$(uname -m)" = "x86_64"
-          command -v zstd || brew install zstd
+          test "$(uname -m)" = "arm64"
+          /usr/bin/arch -x86_64 /usr/bin/true
           (
             cd "$RUNNER_TEMP/runtime"
             shasum -a 256 -c SHA256SUMS
@@ -162,7 +115,7 @@ jobs:
           source_cache="$RUNNER_TEMP/php${PHP_VERSION}-cache-current.tar.zst"
           curl -fsSL --retry 3 -o "$source_cache" "https://github.com/$GITHUB_REPOSITORY/releases/download/builds/php${PHP_VERSION}-cache.tar.zst"
           SOURCE_CACHE="$source_cache" \
-            RUNTIME_ARCHIVE="$RUNNER_TEMP/runtime/curl-runtime.tar.gz" \
+            RUNTIME_ARCHIVE="$RUNNER_TEMP/runtime/php-runtime.tar.gz" \
             BUILD_DIR="$RUNNER_TEMP/builds" \
             REPORT_DIR="$RUNNER_TEMP/comparison" \
             PREINSTALLED_DIR="/opt/local.before-cache-refresh-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${PHP_VERSION}" \
@@ -170,37 +123,47 @@ jobs:
             bash scripts/refresh-cache.sh "$PHP_VERSION"
           echo /opt/local/bin >> "$GITHUB_PATH"
 
-      - name: Upload cache comparison
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: php${{ env.PHP_VERSION }}-comparison-${{ inputs.runner }}
-          path: ${{ runner.temp }}/comparison
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Validate PHP and curl
+      - name: Validate PHP, extensions, and dependency closure
         run: |
           php --ini
           php -v
-          php -m
+          modules="$(php -m 2>&1)"
+          printf '%s\n' "$modules"
+          if grep -Eq '^PHP (Warning|Startup|Deprecated|Notice)' <<< "$modules"; then
+            echo "PHP emitted a startup message" >&2
+            exit 1
+          fi
+          sudo /opt/local/sbin/php-fpm"$PHP_VERSION" -t
+          file "$(command -v php)" | grep -q x86_64
+          ext_dir="$(php -i | sed -n 's|^extension_dir => \(/.*\) =>.*|\1|p' | head -1)"
+          for bin in "$ext_dir"/*.so; do
+            extension="$(basename "$bin" .so)"
+            case "$extension" in
+              opcache) extension='Zend OPcache' ;;
+              xdebug) continue ;;
+            esac
+            php -r "if (!extension_loaded('$extension')) { throw new Exception('$extension not loaded'); }"
+          done
+          php -r '$image = imagecreatetruecolor(2, 2); if ($image === false) { throw new Exception("GD failed"); }'
+          php -r 'if (gmp_strval(gmp_add("2", "3")) !== "5") { throw new Exception("GMP failed"); }'
+          php -r '$db = new SQLite3(":memory:"); if ($db->querySingle("SELECT 2 + 3") !== 5) { throw new Exception("SQLite failed"); }'
+          php -r '$file = tempnam(sys_get_temp_dir(), "zip"); unlink($file); $zip = new ZipArchive(); if ($zip->open($file, ZipArchive::CREATE) !== true || !$zip->addFromString("test", "ok") || !$zip->close()) { throw new Exception("ZIP failed"); } unlink($file);'
+          php -r '$xml = new DOMDocument(); $xml->loadXML("<root/>"); $style = new DOMDocument(); $style->loadXML("<xsl:stylesheet version=\"1.0\" xmlns:xsl=\"http://www.w3.org/1999/XSL/Transform\"><xsl:template match=\"/\"><ok/></xsl:template></xsl:stylesheet>"); $xsl = new XSLTProcessor(); $xsl->importStylesheet($style); if (strpos($xsl->transformToXML($xml), "<ok/>") === false) { throw new Exception("XSL failed"); }'
+          php -r 'if (extension_loaded("yaml")) { $parsed = yaml_parse("key: value"); if ($parsed["key"] !== "value") { throw new Exception("YAML failed"); } }'
+          AUDIT_DIR="$RUNNER_TEMP/comparison/base-dependency-audit" bash scripts/audit-dependencies.sh
+
+      - name: Validate curl and Composer 2.2
+        env:
+          COMPOSER_HOME: ${{ runner.temp }}/composer
+        run: |
           php -r 'if (!extension_loaded("curl")) { throw new Exception("curl extension not loaded"); }'
-          # shellcheck disable=SC2016
           ssl_version="$(php -r '$curl = curl_version(); echo $curl["ssl_version"];')"
           echo "curl SSL backend: $ssl_version"
           case "$ssl_version" in
             OpenSSL/*) ;;
             *) echo "Expected the OpenSSL curl backend" >&2; exit 1 ;;
           esac
-          file /opt/local/lib/libcurl.4.dylib | grep -q x86_64
-          otool -L /opt/local/lib/libcurl.4.dylib
-          # shellcheck disable=SC2016
           php -r '$curl = curl_init("https://repo.packagist.org/packages.json"); curl_setopt($curl, CURLOPT_RETURNTRANSFER, true); $body = curl_exec($curl); if ($body === false) { throw new Exception(curl_error($curl)); } if (curl_getinfo($curl, CURLINFO_HTTP_CODE) !== 200) { throw new Exception("Unexpected HTTP status"); }'
-
-      - name: Validate Composer 2.2.29
-        env:
-          COMPOSER_HOME: ${{ runner.temp }}/composer
-        run: |
           composer="$RUNNER_TEMP/composer.phar"
           curl -fsSL --retry 3 -o "$composer" https://getcomposer.org/download/2.2.29/composer.phar
           echo "f38623ebdeeab5905b24b048fd32804150e598436cc43db9fc12362894c1279d  $composer" | shasum -a 256 -c -
@@ -223,26 +186,32 @@ jobs:
             echo "PHP emitted a startup message after installing Imagick" >&2
             exit 1
           fi
-          ext_dir="$(php -i | sed -n 's|^extension_dir => \(/.*\) =>.*|\1|p' | head -1)"
-          for bin in "$ext_dir"/*.so; do
-            extension="$(basename "$bin" .so)"
-            case "$extension" in
-              opcache) extension='Zend OPcache' ;;
-              xdebug) continue ;;
-            esac
-            php -r "if (!extension_loaded('$extension')) { throw new Exception('$extension not loaded'); }"
-          done
           php -r 'if (!extension_loaded("imagick")) { throw new Exception("imagick not loaded"); }'
+          imagick_path="$(php -r 'echo ini_get("extension_dir") . "/imagick.so";')"
+          test -f "$imagick_path"
+          file "$imagick_path" | grep -q x86_64
+          file "$(command -v convert)" | grep -q x86_64
+          convert -list format | grep -Eq '^[[:space:]]*HEI(C|F)'
+          AUDIT_DIR="$RUNNER_TEMP/comparison/imagick-dependency-audit" bash scripts/audit-dependencies.sh
+
+      - name: Upload cache comparison
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: php${{ env.PHP_VERSION }}-comparison-arm64
+          path: ${{ runner.temp }}/comparison
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload candidate cache
         uses: actions/upload-artifact@v7
         with:
-          name: php${{ env.PHP_VERSION }}-cache-${{ inputs.runner }}
+          name: php${{ env.PHP_VERSION }}-cache-arm64
           path: ${{ runner.temp }}/builds/php${{ env.PHP_VERSION }}-cache.tar.zst
           if-no-files-found: error
           retention-days: 14
 
-      - name: Restore runner MacPorts
+      - name: Restore runner state
         if: ${{ always() }}
         run: |
           backup="/opt/local.before-cache-refresh-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${PHP_VERSION}"
@@ -254,10 +223,112 @@ jobs:
             sudo mv "$backup" /opt/local
           fi
 
+  intel:
+    name: PHP ${{ matrix.php-version }} native Intel compatibility
+    needs: build
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version: ['53', '54', '55']
+    env:
+      PHP_VERSION: ${{ matrix.php-version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Prepare isolated Intel runner
+        run: |
+          test "$(uname -m)" = "x86_64"
+          backup="/opt/local.before-intel-validation-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${PHP_VERSION}"
+          state="$RUNNER_TEMP/opt-local-intel-state"
+          test ! -e "$backup"
+          if [[ -d /opt/local ]]; then
+            sudo mv /opt/local "$backup"
+            echo present > "$state"
+          else
+            echo absent > "$state"
+          fi
+          command -v zstd || brew install zstd
+          sw_vers
+
+      - name: Download arm64-produced candidate
+        uses: actions/download-artifact@v8
+        with:
+          name: php${{ env.PHP_VERSION }}-cache-arm64
+          path: ${{ runner.temp }}/candidate
+
+      - name: Install exact candidate archive
+        run: |
+          candidate="$RUNNER_TEMP/candidate/php${PHP_VERSION}-cache.tar.zst"
+          test -f "$candidate"
+          zstd -dc "$candidate" | sudo tar -xf - -C /
+          echo /opt/local/bin >> "$GITHUB_PATH"
+
+      - name: Validate natively on Intel
+        run: |
+          test "$(uname -m)" = "x86_64"
+          file "$(command -v php)" | grep -q x86_64
+          php -v
+          modules="$(php -m 2>&1)"
+          printf '%s\n' "$modules"
+          if grep -Eq '^PHP (Warning|Startup|Deprecated|Notice)' <<< "$modules"; then
+            echo "PHP emitted a startup message on Intel" >&2
+            exit 1
+          fi
+          sudo /opt/local/sbin/php-fpm"$PHP_VERSION" -t
+          php -r '$image = imagecreatetruecolor(2, 2); if ($image === false) { throw new Exception("GD failed"); }'
+          php -r 'if (gmp_strval(gmp_add("2", "3")) !== "5") { throw new Exception("GMP failed"); }'
+          php -r '$db = new SQLite3(":memory:"); if ($db->querySingle("SELECT 2 + 3") !== 5) { throw new Exception("SQLite failed"); }'
+          php -r '$file = tempnam(sys_get_temp_dir(), "zip"); unlink($file); $zip = new ZipArchive(); if ($zip->open($file, ZipArchive::CREATE) !== true || !$zip->addFromString("test", "ok") || !$zip->close()) { throw new Exception("ZIP failed"); } unlink($file);'
+          php -r '$xml = new DOMDocument(); $xml->loadXML("<root/>"); $style = new DOMDocument(); $style->loadXML("<xsl:stylesheet version=\"1.0\" xmlns:xsl=\"http://www.w3.org/1999/XSL/Transform\"><xsl:template match=\"/\"><ok/></xsl:template></xsl:stylesheet>"); $xsl = new XSLTProcessor(); $xsl->importStylesheet($style); if (strpos($xsl->transformToXML($xml), "<ok/>") === false) { throw new Exception("XSL failed"); }'
+          php -r 'if (extension_loaded("yaml")) { $parsed = yaml_parse("key: value"); if ($parsed["key"] !== "value") { throw new Exception("YAML failed"); } }'
+          php -r '$curl = curl_init("https://repo.packagist.org/packages.json"); curl_setopt($curl, CURLOPT_RETURNTRANSFER, true); $body = curl_exec($curl); if ($body === false || curl_getinfo($curl, CURLINFO_HTTP_CODE) !== 200) { throw new Exception(curl_error($curl)); }'
+          AUDIT_DIR="$RUNNER_TEMP/intel-audit/base" bash scripts/audit-dependencies.sh
+
+      - name: Validate published Imagick cache natively on Intel
+        run: |
+          bash scripts/install.sh "$PHP_VERSION" imagick
+          modules="$(php -m 2>&1)"
+          printf '%s\n' "$modules"
+          if grep -Eq '^PHP (Warning|Startup|Deprecated|Notice)' <<< "$modules"; then
+            echo "PHP emitted a startup message after installing Imagick on Intel" >&2
+            exit 1
+          fi
+          php -r 'if (!extension_loaded("imagick")) { throw new Exception("imagick not loaded"); }'
+          imagick_path="$(php -r 'echo ini_get("extension_dir") . "/imagick.so";')"
+          test -f "$imagick_path"
+          file "$imagick_path" | grep -q x86_64
+          file "$(command -v convert)" | grep -q x86_64
+          convert -list format | grep -Eq '^[[:space:]]*HEI(C|F)'
+          AUDIT_DIR="$RUNNER_TEMP/intel-audit/imagick" bash scripts/audit-dependencies.sh
+
+      - name: Upload Intel compatibility audit
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: php${{ env.PHP_VERSION }}-audit-intel
+          path: ${{ runner.temp }}/intel-audit
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Restore runner state
+        if: ${{ always() }}
+        run: |
+          backup="/opt/local.before-intel-validation-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${PHP_VERSION}"
+          state="$RUNNER_TEMP/opt-local-intel-state"
+          [[ -f "$state" ]] || exit 0
+          sudo rm -rf /opt/local
+          if [[ "$(cat "$state")" == "present" ]]; then
+            test -e "$backup"
+            sudo mv "$backup" /opt/local
+          fi
+
   publish:
     name: Publish caches
     if: ${{ inputs.publish }}
-    needs: build
+    needs: [build, intel]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -265,7 +336,7 @@ jobs:
       - name: Download candidate caches
         uses: actions/download-artifact@v8
         with:
-          pattern: php*-cache-${{ inputs.runner }}
+          pattern: php*-cache-arm64
           path: ${{ runner.temp }}/builds
           merge-multiple: true
 

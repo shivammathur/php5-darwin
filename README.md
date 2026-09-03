@@ -4,9 +4,10 @@
 <a href="https://github.com/shivammathur/php5-darwin/blob/main/LICENSE" title="license"><img alt="LICENSE" src="https://img.shields.io/badge/license-MIT-428f7e.svg"></a>
 <a href="https://github.com/shivammathur/php5-darwin/releases/latest" title="builds"><img alt="PHP Versions Supported" src="https://img.shields.io/badge/php-5.3, 5.4 and 5.5-8892BF.svg"></a>
 
-> Scripts to install end of life PHP versions.
+> Scripts to install end of life PHP versions on Apple Silicon.
 
 PHP versions in this project have reached end of life and should not be used except for testing backward-compatibility.
+The x86_64 PHP and extension binaries run through Rosetta 2 on macOS 14 or newer.
 
 ## Usage
 

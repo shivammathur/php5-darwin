@@ -90,10 +90,13 @@ jobs:
 
       - name: Test PECL
         run: |
+          command -v autoconf >/dev/null || brew install autoconf
           pecl -V
           curl -fsSL --retry 3 -o /tmp/msgpack-0.5.7.tgz https://pecl.php.net/get/msgpack-0.5.7.tgz
           sudo pecl install /tmp/msgpack-0.5.7.tgz
           php -r "if (!extension_loaded('msgpack')) { throw new Exception('msgpack not found'); }"
+          extension_dir="$(php -r 'echo ini_get("extension_dir");')"
+          file -L "$extension_dir/msgpack.so" | grep -q x86_64
 
   upload:
     needs: run

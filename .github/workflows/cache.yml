@@ -29,6 +29,8 @@ jobs:
         run: |
           test "$(uname -m)" = "arm64"
           /usr/bin/arch -x86_64 /usr/bin/true
+          test -x /usr/bin/perl
+          test -x /usr/bin/m4
           sw_vers
 
       - name: Prepare PHP build root
@@ -177,6 +179,17 @@ jobs:
           php "$composer" global require --no-interaction --no-progress psr/log:1.1.4
           test -f "$COMPOSER_HOME/vendor/psr/log/Psr/Log/LoggerInterface.php"
 
+      - name: Validate packaged PECL build tools
+        run: |
+          /opt/local/bin/autoconf --version | grep -q '2\.69'
+          curl -fsSL --retry 3 -o /tmp/msgpack-0.5.7.tgz https://pecl.php.net/get/msgpack-0.5.7.tgz
+          sudo env PATH="/opt/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+            /opt/local/bin/pecl install /tmp/msgpack-0.5.7.tgz
+          extension_dir="$(php -r 'echo ini_get("extension_dir");')"
+          php -d "extension=$extension_dir/msgpack.so" -r 'if (!extension_loaded("msgpack")) { throw new Exception("msgpack not loaded"); }'
+          file -L "$extension_dir/msgpack.so" | grep -q x86_64
+          AUDIT_DIR="$RUNNER_TEMP/comparison/pecl-dependency-audit" bash scripts/audit-dependencies.sh
+
       - name: Validate published Imagick cache
         run: |
           bash scripts/install.sh "$PHP_VERSION" imagick
@@ -305,6 +318,17 @@ jobs:
           php -r '$formats = Imagick::queryFormats("HEI*"); if (!in_array("HEIC", $formats, true) && !in_array("HEIF", $formats, true)) { throw new Exception("HEIC/HEIF support not found"); }'
           /opt/local/bin/convert -list format | grep -Eq '^[[:space:]]*HEI(C|F)'
           AUDIT_DIR="$RUNNER_TEMP/intel-audit/imagick" bash scripts/audit-dependencies.sh
+
+      - name: Validate packaged PECL build tools natively on Intel
+        run: |
+          /opt/local/bin/autoconf --version | grep -q '2\.69'
+          curl -fsSL --retry 3 -o /tmp/msgpack-0.5.7.tgz https://pecl.php.net/get/msgpack-0.5.7.tgz
+          sudo env PATH="/opt/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+            /opt/local/bin/pecl install /tmp/msgpack-0.5.7.tgz
+          extension_dir="$(php -r 'echo ini_get("extension_dir");')"
+          php -d "extension=$extension_dir/msgpack.so" -r 'if (!extension_loaded("msgpack")) { throw new Exception("msgpack not loaded"); }'
+          file -L "$extension_dir/msgpack.so" | grep -q x86_64
+          AUDIT_DIR="$RUNNER_TEMP/intel-audit/pecl" bash scripts/audit-dependencies.sh
 
       - name: Upload Intel compatibility audit
         if: ${{ always() }}

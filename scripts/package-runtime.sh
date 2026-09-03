@@ -69,6 +69,31 @@ add_macports_package libyaml-0.2.5_0.darwin_23.x86_64.tbz2 6eb3a2c9e1d7e160c386b
 add_macports_package libzip-1.11.4_1.darwin_23.x86_64.tbz2 ee8e4c4574dd3ce22e89239a004346792aa94c7c5dd7530f41226f585698591d \
   libzip.5.5.dylib libzip.5.dylib
 
+# PECL invokes Autoconf through phpize. Match the Autoconf 2.69 revision 5
+# MacPorts recipe used when these PHP packages were built: on Darwin it uses
+# /usr/bin/m4 and /usr/bin/perl. Only the commands phpize calls are packaged.
+autoconf_archive=$(download \
+  https://ftp.gnu.org/gnu/autoconf/autoconf-2.69.tar.xz \
+  64ebcec9f8ac5b2487125a86a7760d2591ac9e1d3dbd59489633f9de62a57684)
+autoconf_source="$work_dir/autoconf-source"
+autoconf_dest="$work_dir/autoconf-dest"
+mkdir -p "$autoconf_source" "$autoconf_dest"
+tar -xJf "$autoconf_archive" -C "$autoconf_source" --strip-components=1
+(
+  cd "$autoconf_source"
+  M4=/usr/bin/m4 PERL=/usr/bin/perl ./configure --prefix=/opt/local
+  make -j"$(sysctl -n hw.ncpu)"
+  make DESTDIR="$autoconf_dest" install
+)
+mkdir -p "$runtime_root/opt/local/bin" \
+  "$runtime_root/opt/local/share/doc/autoconf-2.69"
+for tool in autoconf autoheader autom4te; do
+  cp "$autoconf_dest/opt/local/bin/$tool" "$runtime_root/opt/local/bin/"
+done
+cp -a "$autoconf_dest/opt/local/share/autoconf" "$runtime_root/opt/local/share/"
+cp "$autoconf_source/COPYINGv3" "$autoconf_source/COPYING.EXCEPTION" \
+  "$runtime_root/opt/local/share/doc/autoconf-2.69/"
+
 # The current libxslt archive links to libxml2.16. PHP 5 links to libxml2.2 and
 # passes libxml objects into XSL, so retain the exact 1.1.34 ABI used originally.
 libxslt_archive=$(download \
@@ -145,6 +170,13 @@ for dylib in \
 done
 otool -L "$runtime_root/opt/local/lib/libxslt.1.dylib" | grep -q /opt/local/lib/libxml2.2.dylib
 nm -gU "$runtime_root/opt/local/lib/librav1e.0.4.1.dylib" | grep -Eq ' _?rav1e_context_new$'
+test -x "$runtime_root/opt/local/bin/autoconf"
+test -x "$runtime_root/opt/local/bin/autom4te"
+head -1 "$runtime_root/opt/local/bin/autom4te" | grep -q '^#! /usr/bin/perl -w$'
+M4=/usr/bin/m4 \
+  AUTOM4TE_CFG="$runtime_root/opt/local/share/autoconf/autom4te.cfg" \
+  autom4te_perllibdir="$runtime_root/opt/local/share/autoconf" \
+  "$runtime_root/opt/local/bin/autom4te" --version | grep -q '2\.69'
 
 (
   cd "$runtime_root"

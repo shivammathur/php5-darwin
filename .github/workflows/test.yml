@@ -90,7 +90,9 @@ jobs:
 
       - name: Test PECL
         run: |
-          command -v autoconf >/dev/null || brew install autoconf
+          test "$(command -v autoconf)" = /usr/local/bin/autoconf
+          test "$(readlink /usr/local/bin/autoconf)" = /opt/local/bin/autoconf
+          autoconf --version | grep -q '2\.69'
           pecl -V
           curl -fsSL --retry 3 -o /tmp/msgpack-0.5.7.tgz https://pecl.php.net/get/msgpack-0.5.7.tgz
           sudo pecl install /tmp/msgpack-0.5.7.tgz

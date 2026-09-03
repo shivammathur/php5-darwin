@@ -189,8 +189,8 @@ jobs:
           php -r 'if (!extension_loaded("imagick")) { throw new Exception("imagick not loaded"); }'
           imagick_path="$(php -r 'echo ini_get("extension_dir") . "/imagick.so";')"
           test -f "$imagick_path"
-          file "$imagick_path" | grep -q x86_64
-          file "$(command -v convert)" | grep -q x86_64
+          file -L "$imagick_path" | grep -q x86_64
+          file -L "$(command -v convert)" | grep -q x86_64
           convert -list format | grep -Eq '^[[:space:]]*HEI(C|F)'
           AUDIT_DIR="$RUNNER_TEMP/comparison/imagick-dependency-audit" bash scripts/audit-dependencies.sh
 
@@ -299,8 +299,8 @@ jobs:
           php -r 'if (!extension_loaded("imagick")) { throw new Exception("imagick not loaded"); }'
           imagick_path="$(php -r 'echo ini_get("extension_dir") . "/imagick.so";')"
           test -f "$imagick_path"
-          file "$imagick_path" | grep -q x86_64
-          file "$(command -v convert)" | grep -q x86_64
+          file -L "$imagick_path" | grep -q x86_64
+          file -L "$(command -v convert)" | grep -q x86_64
           convert -list format | grep -Eq '^[[:space:]]*HEI(C|F)'
           AUDIT_DIR="$RUNNER_TEMP/intel-audit/imagick" bash scripts/audit-dependencies.sh
 

@@ -79,8 +79,8 @@ jobs:
           php -r "if (!extension_loaded('imagick')) { throw new Exception('imagick not found'); }"
           imagick_path="$(php -r 'echo ini_get("extension_dir") . "/imagick.so";')"
           test -f "$imagick_path"
-          file "$imagick_path" | grep -q x86_64
-          file "$(command -v convert)" | grep -q x86_64
+          file -L "$imagick_path" | grep -q x86_64
+          file -L "$(command -v convert)" | grep -q x86_64
           convert -list format | grep -Eq '^[[:space:]]*HEI(C|F)'
           bash scripts/audit-dependencies.sh
 

@@ -182,9 +182,10 @@ jobs:
       - name: Validate packaged PECL build tools
         run: |
           /opt/local/bin/autoconf --version | grep -q '2\.69'
-          curl -fsSL --retry 3 -o /tmp/msgpack-0.5.7.tgz https://pecl.php.net/get/msgpack-0.5.7.tgz
           sudo env PATH="/opt/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
-            /opt/local/bin/pecl install /tmp/msgpack-0.5.7.tgz
+            /opt/local/bin/pecl channel-update pecl.php.net
+          sudo env PATH="/opt/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+            /opt/local/bin/pecl install msgpack-0.5.7
           extension_dir="$(php -r 'echo ini_get("extension_dir");')"
           php -d "extension=$extension_dir/msgpack.so" -r 'if (!extension_loaded("msgpack")) { throw new Exception("msgpack not loaded"); }'
           file -L "$extension_dir/msgpack.so" | grep -q x86_64
@@ -322,9 +323,10 @@ jobs:
       - name: Validate packaged PECL build tools natively on Intel
         run: |
           /opt/local/bin/autoconf --version | grep -q '2\.69'
-          curl -fsSL --retry 3 -o /tmp/msgpack-0.5.7.tgz https://pecl.php.net/get/msgpack-0.5.7.tgz
           sudo env PATH="/opt/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
-            /opt/local/bin/pecl install /tmp/msgpack-0.5.7.tgz
+            /opt/local/bin/pecl channel-update pecl.php.net
+          sudo env PATH="/opt/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+            /opt/local/bin/pecl install msgpack-0.5.7
           extension_dir="$(php -r 'echo ini_get("extension_dir");')"
           php -d "extension=$extension_dir/msgpack.so" -r 'if (!extension_loaded("msgpack")) { throw new Exception("msgpack not loaded"); }'
           file -L "$extension_dir/msgpack.so" | grep -q x86_64

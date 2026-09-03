@@ -117,6 +117,7 @@ snapshot_static() {
     checksum=$(shasum -a 256 "$file_path" | cut -d' ' -f1)
     printf '%s  %s\n' "$checksum" "${file_path#/opt/local/}" >>"$destination/php-artifacts.sha256"
   done <"$artifact_list"
+  cp /opt/local/bin/pecl "$destination/pecl-wrapper.txt"
   find /opt/local \( -type f -o -type l \) -print | sed 's|^/opt/local/||' | LC_ALL=C sort >"$destination/all-paths.txt"
 }
 
@@ -169,6 +170,20 @@ fi
 zstd -dc "$SOURCE_CACHE" | sudo tar -xf - -C /
 test -x "/opt/local/bin/php$version"
 snapshot "$report_dir/source"
+
+# PHP 5.3's PECL wrapper uniquely disables php.ini with -n. That prevents it
+# from loading OpenSSL when PECL follows its package downloads to HTTPS.
+pecl_wrapper_expected_change=no
+if [[ "$version" = "53" ]]; then
+  if grep -Fq 'exec $PHP -C -n -q ' /opt/local/bin/pecl; then
+    sudo sed -i '' 's/exec $PHP -C -n -q /exec $PHP -C -q /' /opt/local/bin/pecl
+    pecl_wrapper_expected_change=yes
+  elif ! grep -Fq 'exec $PHP -C -q ' /opt/local/bin/pecl; then
+    echo "Unexpected PHP 5.3 PECL wrapper" >&2
+    exit 1
+  fi
+fi
+
 sudo tar -xzf "$RUNTIME_ARCHIVE" -C /
 snapshot "$report_dir/new"
 
@@ -201,6 +216,11 @@ diff -u "$report_dir/source/php-info.txt" "$report_dir/new/php-info.txt" >"$repo
 diff -u "$report_dir/source/stable-extension-info.txt" "$report_dir/new/stable-extension-info.txt" >"$report_dir/stable-extension-info.diff" || true
 diff -u "$report_dir/source/runtime-extension-info.txt" "$report_dir/new/runtime-extension-info.txt" >"$report_dir/runtime-extension-info.diff" || true
 diff -u "$report_dir/source/curl-version.txt" "$report_dir/new/curl-version.txt" >"$report_dir/curl-version.diff" || true
+diff -u "$report_dir/source/pecl-wrapper.txt" "$report_dir/new/pecl-wrapper.txt" >"$report_dir/pecl-wrapper.diff" || true
+
+pecl_wrapper_changed=no
+[[ -s "$report_dir/pecl-wrapper.diff" ]] && pecl_wrapper_changed=yes
+[[ "$pecl_wrapper_changed" = "$pecl_wrapper_expected_change" ]]
 
 {
   echo "PHP $version cache comparison"
@@ -211,6 +231,7 @@ diff -u "$report_dir/source/curl-version.txt" "$report_dir/new/curl-version.txt"
   echo "Published cache paths: $(wc -l <"$report_dir/source/all-paths.txt")"
   echo "New paths: $(wc -l <"$report_dir/new/all-paths.txt")"
   echo "Missing paths: $(wc -l <"$report_dir/missing-paths.txt")"
+  echo "PECL wrapper changed: $pecl_wrapper_changed"
   echo "Stable comparison status: $comparison_status"
 } | tee "$report_dir/summary.txt"
 

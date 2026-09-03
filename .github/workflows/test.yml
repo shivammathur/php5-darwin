@@ -80,8 +80,9 @@ jobs:
           imagick_path="$(php -r 'echo ini_get("extension_dir") . "/imagick.so";')"
           test -f "$imagick_path"
           file -L "$imagick_path" | grep -q x86_64
-          file -L "$(command -v convert)" | grep -q x86_64
-          convert -list format | grep -Eq '^[[:space:]]*HEI(C|F)'
+          file -L /opt/local/bin/convert | grep -q x86_64
+          php -r '$formats = Imagick::queryFormats("HEI*"); if (!in_array("HEIC", $formats, true) && !in_array("HEIF", $formats, true)) { throw new Exception("HEIC/HEIF support not found"); }'
+          /opt/local/bin/convert -list format | grep -Eq '^[[:space:]]*HEI(C|F)'
           bash scripts/audit-dependencies.sh
 
       - name: Test SSL in file_get_contents

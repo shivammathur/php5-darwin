@@ -1,0 +1,21 @@
+# Restore the PHP 5 C extension removed by MacPorts' obsolete Twig port.
+# Source: macports/macports-ports@41a5f9c0134a04b8e0b1ab2b60518e9d07923351
+# php/php-Twig/Portfile (BSD-licensed MacPorts port definition).
+PortSystem          1.0
+PortGroup           github 1.0
+PortGroup           php 1.1
+
+github.setup        fabpot Twig 1.16.2 v
+github.tarball_from tarball
+name                php-Twig
+categories-append   devel
+maintainers         nomaintainer
+license             BSD
+php.branches        5.3 5.4 5.5
+php.build_dirs      ${worksrcpath}/ext/twig/
+description         Enhances the performance of the Twig runtime engine.
+long_description    ${description}
+homepage            https://twig.symfony.com
+checksums           rmd160  340c869fbb55bb1280e0d43c1d11a20fe901e2b4 \
+                    sha256  b06a14be0dd0c414f1bbb28b99ef0a3d448dfb04553c6c2ac3798977d7b5ddbf
+use_parallel_build  yes

@@ -9,15 +9,21 @@ on:
     branches:
       - main
       - develop
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
 jobs:
   run:
     name: PHP ${{ matrix.php-versions }} on ${{ matrix.runner }}
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         php-versions: ['5.3', '5.4', '5.5']
-        runner: [macos-15, macos-15-intel]
+        runner: [macos-14, macos-15-intel]
     env:
       PHP_VERSION: ${{ matrix.php-versions }}
     steps:
@@ -27,22 +33,34 @@ jobs:
       - name: Check isolated runner
         run: |
           case "${{ matrix.runner }}" in
-            macos-15)
+            macos-14)
               test "$(uname -m)" = "arm64"
-              /usr/bin/arch -x86_64 /usr/bin/true
               ;;
             macos-15-intel)
               test "$(uname -m)" = "x86_64"
               ;;
           esac
-          test ! -e /opt/local
-          zstd --version
+          echo "EXPECTED_ARCHITECTURE=$(uname -m)" >> "$GITHUB_ENV"
+          backup="$RUNNER_TEMP/opt-local.preinstalled"
+          state="$RUNNER_TEMP/opt-local-state"
+          test ! -e "$backup"
+          if [[ -d /opt/local ]]; then
+            sudo mv /opt/local "$backup"
+            echo present > "$state"
+          else
+            echo absent > "$state"
+          fi
+          command -v zstd || brew install zstd
+          echo /usr/local/bin >> "$GITHUB_PATH"
 
       - name: Setup PHP
+        id: install
         run: bash scripts/install.sh "${PHP_VERSION/./}"
 
       - name: Test PHP and extensions
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: |
+          bash scripts/validate-extensions.sh "${PHP_VERSION/./}"
           php --ini
           php -v
           phpize --version
@@ -65,9 +83,10 @@ jobs:
             php -r "if (!extension_loaded('$extension')) { throw new Exception('$extension not loaded'); }"
           done
           php -r "if (!extension_loaded('Zend OPcache')) { throw new Exception('Zend OPcache not found'); }"
-          bash scripts/audit-dependencies.sh
+          bash scripts/audit-dependencies.sh /opt/local "$EXPECTED_ARCHITECTURE"
 
       - name: Install and test Imagick
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: |
           bash scripts/install.sh "${PHP_VERSION/./}" imagick
           modules="$(php -m 2>&1)"
@@ -79,48 +98,41 @@ jobs:
           php -r "if (!extension_loaded('imagick')) { throw new Exception('imagick not found'); }"
           imagick_path="$(php -r 'echo ini_get("extension_dir") . "/imagick.so";')"
           test -f "$imagick_path"
-          file -L "$imagick_path" | grep -q x86_64
-          file -L /opt/local/bin/convert | grep -q x86_64
+          file -L "$imagick_path" | grep -q "$EXPECTED_ARCHITECTURE"
+          # shellcheck disable=SC2016
+          php -r '$image = new Imagick(); $image->newImage(2, 2, "white"); if ($image->getImageWidth() !== 2) { throw new Exception("Imagick failed"); }'
+          # shellcheck disable=SC2016
           php -r '$formats = Imagick::queryFormats("HEI*"); if (!in_array("HEIC", $formats, true) && !in_array("HEIF", $formats, true)) { throw new Exception("HEIC/HEIF support not found"); }'
-          /opt/local/bin/convert -list format | grep -Eq '^[[:space:]]*HEI(C|F)'
-          bash scripts/audit-dependencies.sh
+          bash scripts/audit-dependencies.sh /opt/local "$EXPECTED_ARCHITECTURE"
 
       - name: Test SSL in file_get_contents
-        run: php -r "echo file_get_contents('https://repo.packagist.org/packages.json');"
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: php -r 'if (file_get_contents("https://repo.packagist.org/packages.json") === false) { throw new Exception("HTTPS stream failed"); }'
 
       - name: Test PECL
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: |
           test "$(command -v autoconf)" = /usr/local/bin/autoconf
           test "$(readlink /usr/local/bin/autoconf)" = /opt/local/bin/autoconf
           autoconf --version | grep -q '2\.69'
           pecl -V
-          sudo pecl channel-update pecl.php.net
-          sudo pecl install msgpack-0.5.7
+          sudo env HOME="$HOME" PATH="/opt/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+            /opt/local/bin/pecl channel-update pecl.php.net
+          sudo env HOME="$HOME" PATH="/opt/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+            /opt/local/bin/pecl -d verbose=3 install msgpack-0.5.7
           php -r "if (!extension_loaded('msgpack')) { throw new Exception('msgpack not found'); }"
           extension_dir="$(php -r 'echo ini_get("extension_dir");')"
-          file -L "$extension_dir/msgpack.so" | grep -q x86_64
+          file -L "$extension_dir/msgpack.so" | grep -q "$EXPECTED_ARCHITECTURE"
 
-  upload:
-    needs: run
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Install cloudsmith-cli
+      - name: Restore runner state
+        if: ${{ always() }}
         run: |
-          pip install --upgrade cloudsmith-cli
-          sudo cp ./scripts/cds /usr/local/bin/cds
-          sudo sed -i "s|REPO|${{ github.repository }}|" /usr/local/bin/cds
-          sudo chmod a+x /usr/local/bin/cds
-      - name: Update script
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
-        run: |
-          release=builds
-          if ! gh release view "$release"; then
-            gh release create "$release" scripts/install.sh -t "$release" -n "$release"
-          else
-            gh release upload "$release" scripts/install.sh --clobber
+          state="$RUNNER_TEMP/opt-local-state"
+          [[ -f "$state" ]] || exit 0
+          if [[ "$(cat "$state")" = present ]]; then
+            test -d "$RUNNER_TEMP/opt-local.preinstalled"
           fi
-          cds ./scripts/install.sh
+          sudo rm -rf /opt/local
+          if [[ "$(cat "$state")" = present ]]; then
+            sudo mv "$RUNNER_TEMP/opt-local.preinstalled" /opt/local
+          fi

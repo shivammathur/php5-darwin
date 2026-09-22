@@ -192,47 +192,7 @@ for curve in secp224r1 prime256v1 secp384r1 secp521r1; do
   "$prefix/libexec/openssl10/bin/openssl" ecparam -name "$curve" -check -noout
 done
 
-pear_ref=v1.9.5
-pear_checksum=c45983a5065b8bd2e4fbb9191786aacd43a0d4736493e5008f6f844c13a14563
-curl -fsSL --retry 3 -o "$build_dir/install-pear-nozlib.phar" \
-  "https://raw.githubusercontent.com/pear/pearweb_phars/$pear_ref/install-pear-nozlib.phar"
-echo "$pear_checksum  $build_dir/install-pear-nozlib.phar" | shasum -a 256 -c -
-if ! sudo "$prefix/bin/php" "$build_dir/install-pear-nozlib.phar" \
-  -d "$prefix/lib/$php_version" -b "$prefix/bin"; then
-  pear_diagnostic_dir="$build_dir/pear-diagnostic"
-  pear_diagnostic_log="$build_dir/pear-dyld.log"
-  mkdir -p "$pear_diagnostic_dir/bin" "$pear_diagnostic_dir/lib"
-  env DYLD_PRINT_BINDINGS=1 DYLD_PRINT_LIBRARIES=1 \
-    "$prefix/bin/php" "$build_dir/install-pear-nozlib.phar" \
-    -d "$pear_diagnostic_dir/lib" -b "$pear_diagnostic_dir/bin" \
-    > "$pear_diagnostic_log" 2>&1 || true
-  tail -200 "$pear_diagnostic_log" >&2
-  exit 1
-fi
-for script in pear pecl; do
-  sudo env HOME="$HOME" "$prefix/bin/$script" config-set php_ini "$pecl_file"
-  sudo env HOME="$HOME" "$prefix/bin/$script" config-set php_bin "$prefix/bin/php"
-done
-# All three versions load OpenSSL as a shared module, so PECL needs the ini files.
-if grep -Fq "exec \$PHP -C -n -q " "$prefix/bin/pecl"; then
-  sudo sed -i '' 's/exec $PHP -C -n -q /exec $PHP -C -q /' \
-    "$prefix/bin/pecl"
-elif ! grep -Fq "exec \$PHP -C -q " "$prefix/bin/pecl"; then
-  echo "Unexpected legacy PECL wrapper" >&2
-  exit 1
-fi
-# PEAR 1.9 is needed for PHP 5.3, but its HTTP client cannot decode chunked
-# responses. Request HTTP/1.0 for metadata and archives; HTTPS remains enabled.
-for client in REST Downloader; do
-  sudo sed -i '' 's|HTTP/1\.1|HTTP/1.0|g' \
-    "$prefix/lib/$php_version/PEAR/$client.php"
-done
-if [[ -f "$HOME/.pearrc" ]]; then
-  sudo cp "$HOME/.pearrc" "$php_etc_dir/.pearrc"
-elif [[ -f /var/root/.pearrc ]]; then
-  sudo cp /var/root/.pearrc "$php_etc_dir/.pearrc"
-fi
-test -f "$php_etc_dir/.pearrc"
+NATIVE_BUILD_DIR="$build_dir" bash "$(dirname "$0")/setup-pear.sh" "$version"
 
 # Retain the extensions shipped in the existing caches, not just PHP core.
 # Attempt every independent port so one obsolete extension cannot hide the rest

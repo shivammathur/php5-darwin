@@ -22,8 +22,9 @@ get() {
 setup_php() {
   cache="$php_version$arch_suffix-cache.tar.zst"
   get "$tmp_path.tar.zst" "$repo_url/releases/latest/download/$cache" "$cds/public/$repo/raw/files/$cache"
-  zstd -dq "$tmp_path".tar.zst
-  sudo tar xf "$tmp_path".tar -C /
+  # MacPorts archives mark most files as compressed. Do not recompress each
+  # file with macOS filesystem compression while extracting the runtime.
+  zstd -dcq "$tmp_path.tar.zst" | sudo tar --nopreserveHFSCompression -xf - -C /
   sudo mkdir -p "$usr_bin"
   sudo ln -sf "$opt_bin"/* "$usr_bin"
   sudo ln -sf "$opt_bin"/php-cgi"$version" "$usr_bin"/php-cgi
@@ -33,7 +34,7 @@ setup_php() {
 add_imagick() {
   cache="$php_version-imagick$arch_suffix-cache.tar.zst"
   get "$tmp_path-imagick.tar.zst" "$repo_url/releases/latest/download/$cache" "$cds/public/$repo/raw/files/$cache"
-  sudo zstd -dq "$tmp_path-imagick.tar.zst" && sudo tar -xf "$tmp_path-imagick.tar" -C /
+  zstd -dcq "$tmp_path-imagick.tar.zst" | sudo tar --nopreserveHFSCompression -xf - -C /
 }
 
 configure_pecl() {

@@ -132,7 +132,9 @@ package_paths() {
   relative_paths="$build_dir/$(basename "$paths").relative"
 
   sed 's|^/|./|' "$paths" > "$relative_paths"
-  sudo tar -C / -cf - -T "$relative_paths" | zstd -19 -T0 -o "$output"
+  # MacPorts files often have the compressed flag. Archiving it makes macOS
+  # tar recompress every file during installation, even with older installers.
+  sudo tar --no-fflags -C / -cf - -T "$relative_paths" | zstd -19 -T0 -o "$output"
   sudo chown "$(id -u):$(id -g)" "$output"
   shasum -a 256 "$output"
 }

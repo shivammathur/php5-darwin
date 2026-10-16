@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -206,6 +207,26 @@ def fix_legacy_extension_sources(ports_root: Path) -> None:
             path.write_text(source + block)
 
 
+def fix_imap_client_startup(ports_root: Path) -> None:
+    path = ports_root / "lang/php/Portfile"
+    source = path.read_text()
+    marker = "subport ${php}-imap {\n"
+    block = (
+        marker
+        + "    if {${branch} in {5.3 5.4 5.5}} {\n"
+        + "        patchfiles-append php5-imap-client-gssapi.patch\n"
+        + "    }\n"
+    )
+    if block not in source:
+        if source.count(marker) != 1:
+            raise RuntimeError("MacPorts PHP IMAP subport changed")
+        path.write_text(source.replace(marker, block))
+    shutil.copyfile(
+        Path(__file__).parent / "patches/php5-imap-client-gssapi.patch",
+        ports_root / "lang/php/files/php5-imap-client-gssapi.patch",
+    )
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         raise SystemExit(f"Usage: {sys.argv[0]} <MacPorts ports tree>")
@@ -223,6 +244,7 @@ def main() -> None:
         ports_root / "devel/openssl10/files/darwin64-arm64-cc.patch"
     )
     fix_legacy_extension_sources(ports_root)
+    fix_imap_client_startup(ports_root)
 
 
 if __name__ == "__main__":

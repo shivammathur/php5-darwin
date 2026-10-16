@@ -33,6 +33,9 @@ jobs:
       - name: Test PECL command options
         run: bash scripts/tests/test-pecl-options.sh
 
+      - name: Test runtime filtering
+        run: python3 scripts/tests/test-runtime-filter.py
+
       - name: Check isolated runner
         run: |
           case "${{ matrix.runner }}" in
@@ -87,6 +90,11 @@ jobs:
           done
           php -r "if (!extension_loaded('Zend OPcache')) { throw new Exception('Zend OPcache not found'); }"
           bash scripts/audit-dependencies.sh /opt/local "$EXPECTED_ARCHITECTURE"
+          sudo "$(command -v python3)" scripts/audit-runtime.py
+
+      - name: Test IMAP startup and GSSAPI client
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: bash scripts/validate-imap.sh "${PHP_VERSION/./}"
 
       - name: Install and test Imagick
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
@@ -107,6 +115,7 @@ jobs:
           # shellcheck disable=SC2016
           php -r '$formats = Imagick::queryFormats("HEI*"); if (!in_array("HEIC", $formats, true) && !in_array("HEIF", $formats, true)) { throw new Exception("HEIC/HEIF support not found"); }'
           bash scripts/audit-dependencies.sh /opt/local "$EXPECTED_ARCHITECTURE"
+          sudo "$(command -v python3)" scripts/audit-runtime.py
 
       - name: Test SSL in file_get_contents
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}

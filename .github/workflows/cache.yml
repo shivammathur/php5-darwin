@@ -8,6 +8,11 @@ on:
         required: true
         default: false
         type: boolean
+      source-run:
+        description: Publish an already validated build run from this exact commit (leave empty to build)
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -22,6 +27,7 @@ concurrency:
 
 jobs:
   build:
+    if: ${{ inputs.source-run == '' }}
     name: PHP ${{ matrix.php-version }} ${{ matrix.target.architecture }}
     runs-on: ${{ matrix.target.runner }}
     timeout-minutes: 180
@@ -48,6 +54,7 @@ jobs:
         run: |
           bash scripts/tests/test-pecl-options.sh
           bash scripts/tests/test-audit.sh
+          python3 scripts/tests/test-runtime-filter.py
 
       - name: Prepare native MacPorts
         run: |
@@ -95,6 +102,10 @@ jobs:
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: bash scripts/validate-extensions.sh "$PHP_VERSION"
 
+      - name: Validate IMAP startup and GSSAPI client
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: bash scripts/validate-imap.sh "$PHP_VERSION"
+
       - name: Validate PHP and module behavior
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: |
@@ -135,6 +146,7 @@ jobs:
         run: |
           AUDIT_DIR="$RUNNER_TEMP/audit/base" \
             bash scripts/audit-dependencies.sh /opt/local "$EXPECTED_ARCHITECTURE"
+          sudo "$(command -v python3)" scripts/audit-runtime.py
 
       - name: Validate Composer 2.2
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
@@ -184,6 +196,7 @@ jobs:
           file -L "$imagick_path" | grep "$EXPECTED_ARCHITECTURE"
           AUDIT_DIR="$RUNNER_TEMP/audit/imagick" \
             bash scripts/audit-dependencies.sh /opt/local "$EXPECTED_ARCHITECTURE"
+          sudo "$(command -v python3)" scripts/audit-runtime.py
 
       - name: Upload caches and audit
         if: ${{ always() }}
@@ -193,6 +206,7 @@ jobs:
           path: |
             ${{ runner.temp }}/builds/*.tar.zst
             ${{ runner.temp }}/audit
+            ${{ runner.temp }}/native-build/*-manifest.json
           if-no-files-found: warn
           retention-days: 14
 
@@ -223,20 +237,37 @@ jobs:
 
   publish:
     name: Publish caches
-    if: ${{ inputs.publish }}
+    if: ${{ always() && inputs.publish && (needs.build.result == 'success' || (needs.build.result == 'skipped' && inputs.source-run != '')) }}
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Verify source build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ inputs.source-run }}
+        run: |
+          if [[ -n "$SOURCE_RUN" ]]; then
+            [[ "$SOURCE_RUN" =~ ^[0-9]+$ ]]
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN" \
+              > "$RUNNER_TEMP/source-run.json"
+            jq -e --arg sha "$GITHUB_SHA" \
+              '.head_sha == $sha and .status == "completed" and .conclusion == "success" and .path == ".github/workflows/cache.yml"' \
+              "$RUNNER_TEMP/source-run.json"
+          fi
 
       - name: Download candidate caches
         uses: actions/download-artifact@v8
         with:
           pattern: php*-caches-*
           path: ${{ runner.temp }}/artifacts
+          run-id: ${{ inputs.source-run || github.run_id }}
+          github-token: ${{ github.token }}
 
       - name: Verify candidate set
         run: |
@@ -306,4 +337,24 @@ jobs:
               --pattern "$name" --dir "$RUNNER_TEMP/published"
             test "$(sha256sum "$asset" | cut -d' ' -f1)" = \
               "$(sha256sum "$RUNNER_TEMP/published/$name" | cut -d' ' -f1)"
+          done
+
+      - name: Verify published Cloudsmith assets
+        run: |
+          for asset in "$RUNNER_TEMP"/builds/*; do
+            name="$(basename "$asset")"
+            expected="$(sha256sum "$asset" | cut -d' ' -f1)"
+            matched=false
+            for attempt in {1..12}; do
+              if curl -fsSL --retry 3 -H 'Cache-Control: no-cache' \
+                "https://dl.cloudsmith.io/public/$GITHUB_REPOSITORY/raw/files/$name?verify=$GITHUB_RUN_ID" \
+                -o "$RUNNER_TEMP/published/cloudsmith-$name" && \
+                [[ "$(sha256sum "$RUNNER_TEMP/published/cloudsmith-$name" | cut -d' ' -f1)" = "$expected" ]]; then
+                matched=true
+                break
+              fi
+              echo "Waiting for Cloudsmith asset $name (attempt $attempt)"
+              sleep 10
+            done
+            [[ "$matched" = true ]] || { echo "Cloudsmith checksum mismatch: $name" >&2; exit 1; }
           done

@@ -208,11 +208,13 @@ if [[ "$version" = 54 ]]; then
   bundled_ports+=(mailparse yaml)
 fi
 for extension in "${bundled_ports[@]}"; do
-  if [[ "$extension" = amf || "$extension" = amqp || "$extension" = dbase ]]; then
-    # These archives contain unpatched source bugs; rebuild only the extension.
+  if [[ "$extension" = amf || "$extension" = amqp || "$extension" = dbase || "$extension" = imap ]]; then
+    # These extensions need our source patches; rebuild only the extension.
     # Install AMQP's dependency from its binary archive first.
     if [[ "$extension" = amqp ]]; then
       install_ports rabbitmq-c
+    elif [[ "$extension" = imap ]]; then
+      install_ports cclient kerberos5 libcomerr
     fi
     install_command=(sudo "$port" -N -s install --allow-failing)
   else
@@ -248,14 +250,18 @@ sudo ln -sf glibtoolize "$prefix/bin/libtoolize"
 base_paths="$build_dir/base-paths.txt"
 all_paths="$build_dir/all-paths.txt"
 imagick_paths="$build_dir/imagick-paths.txt"
-collect_paths "$base_paths"
+collect_paths "$base_paths.unfiltered"
+python3 "$(dirname "$0")/filter-runtime.py" "$base_paths.unfiltered" "$base_paths" \
+  --report "$build_dir/base-manifest.json"
 package_paths "$base_paths" \
   "$output_dir/$php_version$arch_suffix-cache.tar.zst"
 
 imagick_variant=+ImageMagick7
 [[ "$version" = 53 ]] && imagick_variant=+ImageMagick6
 if install_ports "$php_version-imagick" "$imagick_variant"; then
-  collect_paths "$all_paths"
+  collect_paths "$all_paths.unfiltered"
+  python3 "$(dirname "$0")/filter-runtime.py" "$all_paths.unfiltered" "$all_paths" \
+    --base "$base_paths.unfiltered" --report "$build_dir/imagick-manifest.json"
   comm -13 "$base_paths" "$all_paths" > "$imagick_paths"
   grep -q "/imagick\.so$" "$imagick_paths"
   package_paths "$imagick_paths" \

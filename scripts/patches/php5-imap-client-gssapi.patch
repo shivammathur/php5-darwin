@@ -1,0 +1,16 @@
+--- ext/imap/php_imap.c.orig
++++ ext/imap/php_imap.c
+@@ -855,6 +855,13 @@
+ 	auth_link(&auth_log);		/* link in the log authenticator */
+ 	auth_link(&auth_md5);		/* link in the cram-md5 authenticator */
+ #if HAVE_IMAP_KRB && defined(HAVE_IMAP_AUTH_GSS)
++	/* PHP only uses c-client's client authenticator. The server validity
++	 * probe resolves the local hostname and checks a server keytab on
++	 * every PHP startup, even when IMAP is never used. Keep the GSSAPI
++	 * client method: it validates the remote service when authenticating.
++	 */
++	auth_gss.valid = NIL;
++	auth_gss.server = NIL;
+ 	auth_link(&auth_gss);		/* link in the gss authenticator */
+ #endif
+ 	auth_link(&auth_pla);		/* link in the plain authenticator */

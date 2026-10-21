@@ -17,9 +17,16 @@ with tarfile.open(source) as t:
 root=source_dir/os.environ['SOURCE_ROOT']
 before={str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in root.rglob('*') if p.is_file()}
 autoconf='213' if minor=='5.3' else '269'
-env={**os.environ,'PHP_AUTOCONF':'/opt/local/bin/autoconf'+autoconf,'PHP_AUTOHEADER':'/opt/local/bin/autoheader'+autoconf}
-subprocess.run(['bash','buildconf','--force'],cwd=root,env=env,check=True)
-assert (root/'configure').is_file()
+env={**os.environ,'PATH':'/opt/local/bin:/opt/local/sbin:'+os.environ['PATH'],
+     'PHP_AUTOCONF':'/opt/local/bin/autoconf'+autoconf,'PHP_AUTOHEADER':'/opt/local/bin/autoheader'+autoconf}
+# Legacy buildconf can return success after an Autoconf helper failed. Keep its
+# tool dependencies on PATH and reject incomplete generated configure scripts.
+with (reports/'buildconf.log').open('w') as log:
+    subprocess.run(['bash','buildconf','--force'],cwd=root,env=env,stdout=log,stderr=log,check=True)
+configure=root/'configure'
+assert configure.is_file() and configure.stat().st_size > 1024*1024, 'Incomplete generated configure'
+assert 'command not found' not in (reports/'buildconf.log').read_text(), 'Bootstrap dependency missing'
+subprocess.run(['bash','-n',str(configure)],env=env,check=True)
 # The private inputs are Git exports; MacPorts' ordinary release archives have
 # these generated parsers already. Generate only missing files with pinned Bison.
 parsers=[]
@@ -96,6 +103,7 @@ if {{${{subport_branch}} eq "{minor}"}} {{
 ''')
 proof={'original_sha256':os.environ['SOURCE_SHA256'],'root':root.name,'original_files':len(before),'original_files_unchanged':True,
        'autoconf':autoconf,'bison':'2.6.4','generated_parsers':parsers,'prepared_source':{'name':name,'root':prepared_root,'sha256':sha,'bytes':archive.stat().st_size},
+       'configure':{'sha256':hashlib.sha256(configure.read_bytes()).hexdigest(),'bytes':configure.stat().st_size},
        'fpm_patch_sha256':hashlib.sha256(fpm_patch.read_bytes()).hexdigest(), 'portfile_sha256':hashlib.sha256(p.read_bytes()).hexdigest()}
 (reports/'source-bootstrap.json').write_text(json.dumps(proof,indent=2))
 shutil.copyfile(fpm_patch,reports/'fpm-context.patch')

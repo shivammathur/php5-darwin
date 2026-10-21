@@ -25,7 +25,10 @@ for name,sha in before.items():
 extension='bz2' if minor in ('5.3','5.4') else 'xz'
 name=f"php-{os.environ['PHP_FULL_VERSION']}-private-{os.environ['SOURCE_SHA256'][:16]}.tar.{extension}"
 archive=source_dir/name
-with tarfile.open(archive,'w:'+extension) as t:t.add(root,arcname=root.name)
+# Preserve MacPorts' eagerly computed extension build paths. Only the derived
+# archive root is normalized; the authenticated original archive is unchanged.
+prepared_root='php-'+os.environ['PHP_FULL_VERSION']
+with tarfile.open(archive,'w:'+extension) as t:t.add(root,arcname=prepared_root)
 sha=hashlib.sha256(archive.read_bytes()).hexdigest()
 subdir='private-php'+short+'-'+os.environ['SOURCE_SHA256'][:16]
 dist=Path('/opt/local/var/macports/distfiles')/subdir
@@ -72,7 +75,7 @@ if {{${{subport_branch}} eq "{minor}"}} {{
     master_sites {{}}
     dist_subdir {subdir}
     distfiles {name}
-    worksrcdir {root.name}
+    worksrcdir {prepared_root}
     checksums sha256 {sha} size {archive.stat().st_size}
     patch.pre_args-append --fuzz=0
     post-patch {{
@@ -82,7 +85,7 @@ if {{${{subport_branch}} eq "{minor}"}} {{
 }}
 ''')
 proof={'original_sha256':os.environ['SOURCE_SHA256'],'root':root.name,'original_files':len(before),'original_files_unchanged':True,
-       'autoconf':autoconf,'prepared_source':{'name':name,'sha256':sha,'bytes':archive.stat().st_size},
+       'autoconf':autoconf,'prepared_source':{'name':name,'root':prepared_root,'sha256':sha,'bytes':archive.stat().st_size},
        'fpm_patch_sha256':hashlib.sha256(fpm_patch.read_bytes()).hexdigest(), 'portfile_sha256':hashlib.sha256(p.read_bytes()).hexdigest()}
 (reports/'source-bootstrap.json').write_text(json.dumps(proof,indent=2))
 shutil.copyfile(fpm_patch,reports/'fpm-context.patch')

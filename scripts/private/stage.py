@@ -74,6 +74,13 @@ def names(plan, arch):
     return [f'php-{minor}-build{suffix}.tar.zst', f'php-{minor}{suffix}.tar.xz', f'php-{minor}{suffix}.tar.zst']
 
 
+def test_extension_input(file):
+    require(file['name'] == 'msgpack-0.5.7.tgz', 'Unexpected PECL test package')
+    require(re.fullmatch('[a-f0-9]{64}', file['sha256']) and 0 < file['bytes'] < 32 * 1024**2, 'Invalid PECL test input')
+    require(file['key'] == f"uploads/sha256/{file['sha256']}/{file['name']}", 'PECL test input key mismatch')
+    return file
+
+
 def plan():
     project, base = context()
     minor = os.environ['PHP_VERSION']
@@ -93,6 +100,7 @@ def plan():
               'revision':os.environ['GITHUB_SHA'], 'ref':os.environ['GITHUB_REF'], 'minor':minor, 'source':source,
               'source_manifest_key':key, 'dependencies':PROJECT['dependencies'], 'builds':builds, 'tests':tests,
               'installer':fingerprint(ROOT/'scripts/install.sh'), 'public_publication':False}
+    record['test_extension_input'] = test_extension_input(next(f for f in manifest['extension_inputs'] if f['name'] == 'msgpack-0.5.7.tgz'))
     reuse=os.environ.get('PRIVATE_REUSE_BUILD_ID','')
     if reuse:
         require(re.fullmatch(r'[1-9][0-9]*-[1-9][0-9]*',reuse), 'Invalid reuse identity')
@@ -115,6 +123,7 @@ def load():
             plan['revision'] == os.environ['GITHUB_SHA'] and plan['ref'] == os.environ['GITHUB_REF'], 'Plan identity mismatch')
     require(plan['builds'] == matrices(project)[0] and plan['tests'] == matrices(project)[1] and
             plan['dependencies'] == PROJECT['dependencies'] and plan['source']['version'] == VERSIONS[plan['minor']], 'Plan drift')
+    test_extension_input(plan['test_extension_input'])
     return plan, base
 
 
@@ -214,8 +223,13 @@ def test():
     result=package_result(plan,base,item['arch'])
     task=workdir()/'test';task.mkdir();packages=task/'packages';packages.mkdir();reports=task/'reports';reports.mkdir()
     for f in result['files']:store.get(f['key'],packages/f['name'],{k:f[k] for k in ('sha256','bytes')})
+    extension = test_extension_input(plan['test_extension_input'])
+    pecl_archive = task / extension['name']
+    store.get(extension['key'], pecl_archive, {k:extension[k] for k in ('sha256','bytes')})
+    with tarfile.open(pecl_archive) as archive:
+        require(all((m.isfile() or m.isdir()) and not m.name.startswith('/') and '..' not in PurePosixPath(m.name).parts for m in archive), 'Unsafe PECL test archive')
     env={**clean_env(),'PHP_VERSION':plan['minor'],'PHP_FULL_VERSION':plan['source']['version'],
-         'EXPECTED_ARCHITECTURE':item['arch'],'PACKAGE_DIR':str(packages),'REPORT_DIR':str(reports),'PRIVATE_TASK_DIR':str(task)}
+         'EXPECTED_ARCHITECTURE':item['arch'],'PACKAGE_DIR':str(packages),'REPORT_DIR':str(reports),'PRIVATE_TASK_DIR':str(task), 'PECL_TEST_ARCHIVE':str(pecl_archive)}
     try:
         shell(['bash',str(ROOT/'scripts/private/test.sh')],env)
         store.put_json(base+'/results/test-'+item['id']+'.json',{'schema':1,'id':item['id'],'plan_sha256':digest(plan),

@@ -22,7 +22,7 @@ if grep -Ei '(^PHP (Warning|Fatal|Notice|Deprecated)|PHP Startup:)' "$REPORT_DIR
 /opt/local/bin/php "$here/smoke.php"
 /opt/local/bin/php-config --version
 /opt/local/bin/phpize --version
-/opt/local/bin/php-cgi -v
+"/opt/local/bin/php-cgi$version" -v
 sudo "/opt/local/sbin/php-fpm$version" -t
 bash "$repo/scripts/validate-extensions.sh" "$version"
 bash "$repo/scripts/validate-imap.sh" "$version"

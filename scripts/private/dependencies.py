@@ -5,6 +5,9 @@ kind,name,dest=sys.argv[1:]
 if kind=='macports-package':
     expected=config['macports_packages'][name]
     url='https://github.com/macports/macports-base/releases/download/v2.12.6/'+name
+elif kind=='bison':
+    expected=config['bison_sha256']
+    url='https://ftp.gnu.org/gnu/bison/bison-'+config['bison_version']+'.tar.gz'
 else:
     assert kind=='ports-tree'
     expected=config['macports_ports_sha256']

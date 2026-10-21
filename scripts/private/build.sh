@@ -21,6 +21,8 @@ cp "$BUILD_REPOSITORY/scripts/ports/php-Twig/Portfile" "$PORTS_ROOT/php/php-Twig
 autoconf=autoconf269
 [[ "$PHP_VERSION" = 5.3 ]] && autoconf=autoconf213
 sudo /opt/local/bin/port -N install "$autoconf"
+bash "$here/build-bison.sh"
+export PRIVATE_BISON="$PRIVATE_TASK_DIR/bison/install/bin/bison"
 # Only /opt/local and this job's private workspace are modified.
 sudo env \
   "SOURCE_ARCHIVE=$SOURCE_ARCHIVE" \
@@ -33,6 +35,7 @@ sudo env \
   "PORTS_ROOT=$PORTS_ROOT" \
   "REPORT_DIR=$REPORT_DIR" \
   "BUILD_REPOSITORY=$BUILD_REPOSITORY" \
+  "PRIVATE_BISON=$PRIVATE_BISON" \
   "$(command -v python3)" "$here/prepare-macports.py"
 (cd "$PORTS_ROOT" && /opt/local/bin/portindex)
 export NATIVE_BUILD_DIR="$REPORT_DIR/native"

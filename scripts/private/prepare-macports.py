@@ -20,6 +20,16 @@ autoconf='213' if minor=='5.3' else '269'
 env={**os.environ,'PHP_AUTOCONF':'/opt/local/bin/autoconf'+autoconf,'PHP_AUTOHEADER':'/opt/local/bin/autoheader'+autoconf}
 subprocess.run(['bash','buildconf','--force'],cwd=root,env=env,check=True)
 assert (root/'configure').is_file()
+# The private inputs are Git exports; MacPorts' ordinary release archives have
+# these generated parsers already. Generate only missing files with pinned Bison.
+parsers=[]
+for stem,prefix in [('zend_language_parser','zend'),('zend_ini_parser','ini_')]:
+    for suffix in ('.c','.h'):
+        assert not (root/'Zend'/(stem+suffix)).exists(), 'Unexpected pre-generated parser'
+    subprocess.run([os.environ['PRIVATE_BISON'],'-y','-p',prefix,'-v','-d',stem+'.y','-o',stem+'.c'],cwd=root/'Zend',check=True)
+    for suffix in ('.c','.h'):
+        file=root/'Zend'/(stem+suffix)
+        parsers.append({'path':str(file.relative_to(root)),'sha256':hashlib.sha256(file.read_bytes()).hexdigest()})
 for name,sha in before.items():
     assert (root/name).is_file() and hashlib.sha256((root/name).read_bytes()).hexdigest()==sha, 'Bootstrap changed original source: '+name
 extension='bz2' if minor in ('5.3','5.4') else 'xz'
@@ -85,7 +95,7 @@ if {{${{subport_branch}} eq "{minor}"}} {{
 }}
 ''')
 proof={'original_sha256':os.environ['SOURCE_SHA256'],'root':root.name,'original_files':len(before),'original_files_unchanged':True,
-       'autoconf':autoconf,'prepared_source':{'name':name,'root':prepared_root,'sha256':sha,'bytes':archive.stat().st_size},
+       'autoconf':autoconf,'bison':'2.6.4','generated_parsers':parsers,'prepared_source':{'name':name,'root':prepared_root,'sha256':sha,'bytes':archive.stat().st_size},
        'fpm_patch_sha256':hashlib.sha256(fpm_patch.read_bytes()).hexdigest(), 'portfile_sha256':hashlib.sha256(p.read_bytes()).hexdigest()}
 (reports/'source-bootstrap.json').write_text(json.dumps(proof,indent=2))
 shutil.copyfile(fpm_patch,reports/'fpm-context.patch')

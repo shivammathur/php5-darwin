@@ -22,7 +22,7 @@ autoconf=autoconf269
 [[ "$PHP_VERSION" = 5.3 ]] && autoconf=autoconf213
 sudo /opt/local/bin/port -N install "$autoconf"
 bash "$here/build-bison.sh"
-export PRIVATE_BISON="$PRIVATE_TASK_DIR/bison/install/bin/bison"
+export PRIVATE_BISON="$PRIVATE_TASK_DIR/bison-prefix/bin/bison"
 # Only /opt/local and this job's private workspace are modified.
 sudo env \
   "SOURCE_ARCHIVE=$SOURCE_ARCHIVE" \

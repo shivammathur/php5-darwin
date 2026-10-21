@@ -1,360 +1,105 @@
-name: Build PHP caches
-
+name: Mirror GitHub release builds
+run-name: Mirror published PHP ${{ inputs.php-versions }} builds — ${{ inputs.ticket }}
 on:
   workflow_dispatch:
     inputs:
-      publish:
-        description: Replace the cache assets in the builds release and Cloudsmith
+      ticket:
+        description: Dispatch tracking identifier
         required: true
-        default: false
-        type: boolean
-      source-run:
-        description: Publish an already validated build run from this exact commit (leave empty to build)
-        required: false
-        default: ''
         type: string
-
+      php-versions:
+        description: 'Minor versions separated by spaces, or all (stable releases only)'
+        required: true
+        type: string
+        default: all
 permissions:
   contents: read
-
-defaults:
-  run:
-    shell: bash
-
-concurrency:
-  group: build-php-caches
-  cancel-in-progress: false
-
 jobs:
-  build:
-    if: ${{ inputs.source-run == '' }}
-    name: PHP ${{ matrix.php-version }} ${{ matrix.target.architecture }}
-    runs-on: ${{ matrix.target.runner }}
-    timeout-minutes: 180
+  versions:
+    if: github.repository == 'shivammathur/php5-darwin'
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.select.outputs.versions }}
+      shared_version: ${{ steps.select.outputs.shared_version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: select
+        env:
+          PHP_VERSIONS: ${{ inputs.php-versions }}
+        run: python3 scripts/mirror-github-release.py matrix
+  mirror:
+    name: Mirror PHP ${{ matrix.php }}
+    needs: versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        php-version: ['53', '54', '55']
-        target:
-          - architecture: arm64
-            runner: macos-14
-            macports-package: MacPorts-2.12.6-14-Sonoma.pkg
-          - architecture: x86_64
-            runner: macos-15-intel
-            macports-package: MacPorts-2.12.6-15-Sequoia.pkg
-    env:
-      EXPECTED_ARCHITECTURE: ${{ matrix.target.architecture }}
-      MACPORTS_PACKAGE: ${{ matrix.target.macports-package }}
-      PHP_VERSION: ${{ matrix.php-version }}
+        php: ${{ fromJSON(needs.versions.outputs.versions) }}
+    concurrency:
+      group: php5-darwin-release-mirror-${{ matrix.php }}
+      cancel-in-progress: false
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Test validation helpers
-        run: |
-          bash scripts/tests/test-pecl-options.sh
-          bash scripts/tests/test-audit.sh
-          python3 scripts/tests/test-runtime-filter.py
-
-      - name: Prepare native MacPorts
-        run: |
-          test "$(uname -m)" = "$EXPECTED_ARCHITECTURE"
-          backup="$RUNNER_TEMP/opt-local.preinstalled"
-          state="$RUNNER_TEMP/opt-local-state"
-          test ! -e "$backup"
-          if [[ -d /opt/local ]]; then
-            sudo mv /opt/local "$backup"
-            echo present > "$state"
-          else
-            echo absent > "$state"
-          fi
-          curl -fsSL --retry 3 -o "$RUNNER_TEMP/macports.pkg" \
-            "https://github.com/macports/macports-base/releases/download/v2.12.6/$MACPORTS_PACKAGE"
-          sudo installer -pkg "$RUNNER_TEMP/macports.pkg" -target /
-          sudo /opt/local/bin/port -N sync
-          port_dir="$(/opt/local/bin/port dir "php$PHP_VERSION")"
-          ports_root="$(cd "$port_dir/../.." && pwd)"
-          python_bin="$(command -v python3)"
-          sudo "$python_bin" scripts/enable-legacy-macports.py "$ports_root"
-          sudo cp scripts/ports/php-Twig/Portfile "$ports_root/php/php-Twig/Portfile"
-          # Twig's restored PHP 5 subports must also be present in the index.
-          (cd "$ports_root" && sudo /opt/local/bin/portindex)
-          grep -n -C 3 'implicit-function-declaration' "$port_dir/Portfile"
-          grep -n -C 3 'implicit-function-declaration' \
-            "$ports_root/_resources/port1.0/group/php-1.1.tcl"
-          sw_vers
-
-      - name: Build native PHP and Imagick caches
-        env:
-          NATIVE_BUILD_DIR: ${{ runner.temp }}/native-build
-        run: |
-          command -v zstd || brew install zstd
-          bash scripts/build-native-cache.sh "$PHP_VERSION" "$RUNNER_TEMP/builds"
-
-      - name: Isolate and install candidate PHP cache
-        id: install
-        run: |
-          sudo mv /opt/local "$RUNNER_TEMP/opt-local.build"
-          PHP5_CACHE_DIR="$RUNNER_TEMP/builds" bash scripts/install.sh "$PHP_VERSION"
-          echo /usr/local/bin >> "$GITHUB_PATH"
-
-      - name: Validate bundled extension compatibility
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: bash scripts/validate-extensions.sh "$PHP_VERSION"
-
-      - name: Validate IMAP startup and GSSAPI client
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: bash scripts/validate-imap.sh "$PHP_VERSION"
-
-      - name: Validate PHP and module behavior
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: |
-          file -L /opt/local/bin/php | tee "$RUNNER_TEMP/php-file.txt"
-          grep -q "$EXPECTED_ARCHITECTURE" "$RUNNER_TEMP/php-file.txt"
-          php --ini
-          php -v
-          modules="$(php -m 2>&1)"
-          printf '%s\n' "$modules"
-          if grep -Eq '^PHP (Warning|Startup|Deprecated|Notice)' <<< "$modules"; then
-            echo "PHP emitted a startup message" >&2
-            exit 1
-          fi
-          for extension in curl gd gmp intl mbstring mysqli openssl pdo_mysql pdo_sqlite soap sockets sqlite3 tidy xmlrpc xsl zip 'Zend OPcache'; do
-            php -r "if (!extension_loaded('$extension')) { throw new Exception('$extension not loaded'); }"
-          done
-          sudo "/opt/local/sbin/php-fpm$PHP_VERSION" -t
-          for curve in secp224r1 prime256v1 secp384r1 secp521r1; do
-            /opt/local/libexec/openssl10/bin/openssl ecparam -name "$curve" -check -noout
-          done
-          # shellcheck disable=SC2016
-          php -r '$image = imagecreatetruecolor(2, 2); if ($image === false) { throw new Exception("GD failed"); }'
-          # shellcheck disable=SC2016
-          php -r 'if (gmp_strval(gmp_add("2", "3")) !== "5") { throw new Exception("GMP failed"); }'
-          # shellcheck disable=SC2016
-          php -r '$db = new SQLite3(":memory:"); if ($db->querySingle("SELECT 2 + 3") !== 5) { throw new Exception("SQLite failed"); }'
-          # shellcheck disable=SC2016
-          php -r '$file = tempnam(sys_get_temp_dir(), "zip"); unlink($file); $zip = new ZipArchive(); if ($zip->open($file, ZipArchive::CREATE) !== true || !$zip->addFromString("test", "ok") || !$zip->close()) { throw new Exception("ZIP failed"); } unlink($file);'
-          # shellcheck disable=SC2016
-          php -r '$curl = curl_init("https://repo.packagist.org/packages.json"); curl_setopt($curl, CURLOPT_RETURNTRANSFER, true); $body = curl_exec($curl); if ($body === false || curl_getinfo($curl, CURLINFO_HTTP_CODE) !== 200) { throw new Exception(curl_error($curl)); }'
-          # shellcheck disable=SC2016
-          php -r '$body = file_get_contents("https://repo.packagist.org/packages.json"); if ($body === false) { throw new Exception("HTTPS stream failed"); }'
-          # shellcheck disable=SC2016
-          php -r '$xml = new DOMDocument(); $xml->loadXML("<root/>"); $style = new DOMDocument(); $style->loadXML("<xsl:stylesheet version=\"1.0\" xmlns:xsl=\"http://www.w3.org/1999/XSL/Transform\"><xsl:template match=\"/\"><ok/></xsl:template></xsl:stylesheet>"); $xsl = new XSLTProcessor(); $xsl->importStylesheet($style); if (strpos($xsl->transformToXML($xml), "<ok/>") === false) { throw new Exception("XSL failed"); }'
-
-      - name: Audit base cache dependency closure
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: |
-          AUDIT_DIR="$RUNNER_TEMP/audit/base" \
-            bash scripts/audit-dependencies.sh /opt/local "$EXPECTED_ARCHITECTURE"
-          sudo "$(command -v python3)" scripts/audit-runtime.py
-
-      - name: Validate Composer 2.2
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        env:
-          COMPOSER_HOME: ${{ runner.temp }}/composer
-        run: |
-          composer="$RUNNER_TEMP/composer.phar"
-          curl -fsSL --retry 3 -o "$composer" https://getcomposer.org/download/2.2.29/composer.phar
-          echo "f38623ebdeeab5905b24b048fd32804150e598436cc43db9fc12362894c1279d  $composer" | shasum -a 256 -c -
-          php "$composer" --version
-          php "$composer" show --platform | tee "$RUNNER_TEMP/composer-platform.txt"
-          curl_backend=openssl
-          [[ "$PHP_VERSION" = 53 ]] && curl_backend=gnutls
-          grep -Eq "^lib-curl-${curl_backend}[[:space:]]" "$RUNNER_TEMP/composer-platform.txt"
-          if grep -Eq '^lib-curl-[^[:space:]]*[()]' "$RUNNER_TEMP/composer-platform.txt"; then
-            echo "Composer generated an invalid lib-curl package name" >&2
-            exit 1
-          fi
-          php "$composer" global require --no-interaction --no-progress psr/log:1.1.4
-          test -f "$COMPOSER_HOME/vendor/psr/log/Psr/Log/LoggerInterface.php"
-
-      - name: Validate PECL builds
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: |
-          # Read the full output: grep -q can give Autoconf SIGPIPE with pipefail.
-          /opt/local/bin/autoconf --version | grep '2\.69'
-          bash scripts/validate-pecl.sh "$PHP_VERSION"
-          AUDIT_DIR="$RUNNER_TEMP/audit/pecl" \
-            bash scripts/audit-dependencies.sh /opt/local "$EXPECTED_ARCHITECTURE"
-
-      - name: Validate candidate Imagick cache
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: |
-          PHP5_CACHE_DIR="$RUNNER_TEMP/builds" bash scripts/install.sh "$PHP_VERSION" imagick
-          modules="$(php -m 2>&1)"
-          printf '%s\n' "$modules"
-          if grep -Eq '^PHP (Warning|Startup|Deprecated|Notice)' <<< "$modules"; then
-            echo "PHP emitted a startup message after installing Imagick" >&2
-            exit 1
-          fi
-          # shellcheck disable=SC2016
-          php -r 'if (!extension_loaded("imagick")) { throw new Exception("imagick not loaded"); } $image = new Imagick(); $image->newImage(2, 2, "white"); if ($image->getImageWidth() !== 2) { throw new Exception("Imagick failed"); }'
-          # shellcheck disable=SC2016
-          php -r '$formats = Imagick::queryFormats("HEI*"); if (!in_array("HEIC", $formats, true) && !in_array("HEIF", $formats, true)) { throw new Exception("HEIC/HEIF support not found"); }'
-          # shellcheck disable=SC2016
-          imagick_path="$(php -r 'echo ini_get("extension_dir") . "/imagick.so";')"
-          file -L "$imagick_path" | grep "$EXPECTED_ARCHITECTURE"
-          AUDIT_DIR="$RUNNER_TEMP/audit/imagick" \
-            bash scripts/audit-dependencies.sh /opt/local "$EXPECTED_ARCHITECTURE"
-          sudo "$(command -v python3)" scripts/audit-runtime.py
-
-      - name: Upload caches and audit
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          name: php${{ env.PHP_VERSION }}-caches-${{ env.EXPECTED_ARCHITECTURE }}
-          path: |
-            ${{ runner.temp }}/builds/*.tar.zst
-            ${{ runner.temp }}/audit
-            ${{ runner.temp }}/native-build/*-manifest.json
-          if-no-files-found: warn
-          retention-days: 14
-
-      - name: Upload MacPorts failure logs
-        if: ${{ failure() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: php${{ env.PHP_VERSION }}-macports-logs-${{ env.EXPECTED_ARCHITECTURE }}
-          path: |
-            /opt/local/var/macports/logs/**/main.log
-            ${{ runner.temp }}/opt-local.build/var/macports/logs/**/main.log
-            ${{ runner.temp }}/native-build/*.log
-          if-no-files-found: warn
-          retention-days: 14
-
-      - name: Restore runner state
-        if: ${{ always() }}
+          persist-credentials: false
+      - name: Install transfer clients
         run: |
-          state="$RUNNER_TEMP/opt-local-state"
-          [[ -f "$state" ]] || exit 0
-          if [[ "$(cat "$state")" = present ]]; then
-            test -d "$RUNNER_TEMP/opt-local.preinstalled"
-          fi
-          sudo rm -rf /opt/local
-          if [[ "$(cat "$state")" = present ]]; then
-            sudo mv "$RUNNER_TEMP/opt-local.preinstalled" /opt/local
-          fi
-
-  publish:
-    name: Publish caches
-    if: ${{ always() && inputs.publish && (needs.build.result == 'success' || (needs.build.result == 'skipped' && inputs.source-run != '')) }}
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      actions: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Verify source build
+          python3 -m venv "$RUNNER_TEMP/mirror-tools"
+          "$RUNNER_TEMP/mirror-tools/bin/pip" install cloudsmith-cli
+          echo "$RUNNER_TEMP/mirror-tools/bin" >> "$GITHUB_PATH"
+      - name: Download and verify published release assets
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_RUN: ${{ inputs.source-run }}
-        run: |
-          if [[ -n "$SOURCE_RUN" ]]; then
-            [[ "$SOURCE_RUN" =~ ^[0-9]+$ ]]
-            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN" \
-              > "$RUNNER_TEMP/source-run.json"
-            jq -e --arg sha "$GITHUB_SHA" \
-              '.head_sha == $sha and .status == "completed" and .conclusion == "success" and .path == ".github/workflows/cache.yml"' \
-              "$RUNNER_TEMP/source-run.json"
-          fi
-
-      - name: Download candidate caches
-        uses: actions/download-artifact@v8
-        with:
-          pattern: php*-caches-*
-          path: ${{ runner.temp }}/artifacts
-          run-id: ${{ inputs.source-run || github.run_id }}
-          github-token: ${{ github.token }}
-
-      - name: Verify candidate set
-        run: |
-          mkdir -p "$RUNNER_TEMP/builds"
-          find "$RUNNER_TEMP/artifacts" -type f -name '*.tar.zst' -exec cp {} "$RUNNER_TEMP/builds" \;
-          test "$(find "$RUNNER_TEMP/builds" -maxdepth 1 -name '*.tar.zst' | wc -l)" -eq 12
-          for version in 53 54 55; do
-            for name in \
-              "php${version}-cache.tar.zst" \
-              "php${version}-arm64-cache.tar.zst" \
-              "php${version}-imagick-cache.tar.zst" \
-              "php${version}-imagick-arm64-cache.tar.zst"; do
-              test -f "$RUNNER_TEMP/builds/$name"
-            done
-          done
-          sha256sum "$RUNNER_TEMP"/builds/*.tar.zst
-          zstd -t "$RUNNER_TEMP"/builds/*.tar.zst
-
-      - name: Back up published caches
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p "$RUNNER_TEMP/backup"
-          gh release download builds --repo "$GITHUB_REPOSITORY" \
-            --pattern 'php5[3-5]*-cache.tar.zst' --pattern install.sh --dir "$RUNNER_TEMP/backup"
-
-      - name: Upload cache backup
-        uses: actions/upload-artifact@v7
-        with:
-          name: php-cache-backup-${{ github.run_id }}
-          path: ${{ runner.temp }}/backup/*
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Install Cloudsmith CLI
-        run: |
-          python3 -m venv "$RUNNER_TEMP/cloudsmith"
-          "$RUNNER_TEMP/cloudsmith/bin/pip" install --upgrade pip cloudsmith-cli
-          echo "$RUNNER_TEMP/cloudsmith/bin" >> "$GITHUB_PATH"
-
-      - name: Publish caches and installer
+          PHP_VERSION: ${{ matrix.php }}
+          SOURCE_VERSION: ${{ matrix.php }}
+        run: python3 scripts/mirror-github-release.py download "$PHP_VERSION" "$RUNNER_TEMP/mirror" "$SOURCE_VERSION"
+      - name: Upload and verify existing mirrors
         env:
           CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
-          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/mirror-github-release.py publish "$RUNNER_TEMP/mirror"
+      - name: Preserve transfer receipt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mirror-receipt-${{ matrix.php }}
+          path: ${{ runner.temp }}/mirror/receipt.json
+          if-no-files-found: warn
+          retention-days: 30
+  shared:
+    name: Mirror shared installer scripts
+    needs: [versions, mirror]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: php5-darwin-release-mirror-shared
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install transfer clients
         run: |
-          cp scripts/install.sh "$RUNNER_TEMP/builds/install.sh"
-          for asset in "$RUNNER_TEMP"/builds/*.tar.zst; do
-            name="$(basename "$asset")"
-            cloudsmith push raw "$GITHUB_REPOSITORY" "$asset" --republish \
-              --summary "$name" --description "$name"
-          done
-          cloudsmith push raw "$GITHUB_REPOSITORY" "$RUNNER_TEMP/builds/install.sh" \
-            --republish --summary install.sh --description install.sh
-          gh release upload builds --repo "$GITHUB_REPOSITORY" \
-            "$RUNNER_TEMP"/builds/*.tar.zst --clobber
-          gh release upload builds --repo "$GITHUB_REPOSITORY" \
-            "$RUNNER_TEMP/builds/install.sh" --clobber
-
-      - name: Verify published GitHub assets
+          python3 -m venv "$RUNNER_TEMP/mirror-tools"
+          "$RUNNER_TEMP/mirror-tools/bin/pip" install cloudsmith-cli
+          echo "$RUNNER_TEMP/mirror-tools/bin" >> "$GITHUB_PATH"
+      - name: Download and verify published release assets
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p "$RUNNER_TEMP/published"
-          for asset in "$RUNNER_TEMP"/builds/*; do
-            name="$(basename "$asset")"
-            gh release download builds --repo "$GITHUB_REPOSITORY" \
-              --pattern "$name" --dir "$RUNNER_TEMP/published"
-            test "$(sha256sum "$asset" | cut -d' ' -f1)" = \
-              "$(sha256sum "$RUNNER_TEMP/published/$name" | cut -d' ' -f1)"
-          done
-
-      - name: Verify published Cloudsmith assets
-        run: |
-          for asset in "$RUNNER_TEMP"/builds/*; do
-            name="$(basename "$asset")"
-            expected="$(sha256sum "$asset" | cut -d' ' -f1)"
-            matched=false
-            for attempt in {1..12}; do
-              if curl -fsSL --retry 3 -H 'Cache-Control: no-cache' \
-                "https://dl.cloudsmith.io/public/$GITHUB_REPOSITORY/raw/files/$name?verify=$GITHUB_RUN_ID" \
-                -o "$RUNNER_TEMP/published/cloudsmith-$name" && \
-                [[ "$(sha256sum "$RUNNER_TEMP/published/cloudsmith-$name" | cut -d' ' -f1)" = "$expected" ]]; then
-                matched=true
-                break
-              fi
-              echo "Waiting for Cloudsmith asset $name (attempt $attempt)"
-              sleep 10
-            done
-            [[ "$matched" = true ]] || { echo "Cloudsmith checksum mismatch: $name" >&2; exit 1; }
-          done
+          PHP_VERSION: shared
+          SOURCE_VERSION: ${{ needs.versions.outputs.shared_version }}
+        run: python3 scripts/mirror-github-release.py download "$PHP_VERSION" "$RUNNER_TEMP/mirror" "$SOURCE_VERSION"
+      - name: Upload and verify existing mirrors
+        env:
+          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+        run: python3 scripts/mirror-github-release.py publish "$RUNNER_TEMP/mirror"
+      - name: Preserve transfer receipt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mirror-receipt-shared
+          path: ${{ runner.temp }}/mirror/receipt.json
+          if-no-files-found: warn
+          retention-days: 30

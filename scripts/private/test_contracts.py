@@ -42,6 +42,13 @@ class Contracts(unittest.TestCase):
             for arch in ('arm64','x86_64'):
                 self.assertEqual(len(stage.names({'project':'php5-ubuntu','minor':minor},arch)),3)
                 self.assertEqual(len(stage.names({'project':'php5-darwin','minor':minor},arch)),2)
+    def test_partial_reuse_is_bound_to_successful_architectures(self):
+        plan={'builds':[{'id':'arm64'},{'id':'x86_64'}], 'reused_build':{'architectures':['arm64']}}
+        self.assertTrue(stage.reuses_architecture(plan,'arm64'))
+        self.assertFalse(stage.reuses_architecture(plan,'x86_64'))
+        for arches in ([], ['arm64','arm64'], ['bogus']):
+            with self.assertRaises(ValueError):stage.reuses_architecture({**plan,'reused_build':{'architectures':arches}},'arm64')
+        self.assertTrue(stage.reuses_architecture({**plan,'reused_build':{'id':'1-1'}},'x86_64'))
     def test_no_public_storage_actions(self):
         workflow=(stage.ROOT/'.github/workflows/stage-private.yml').read_text()
         for forbidden in ('actions/upload-artifact','actions/cache','contents: write','gh release','cloudsmith'):

@@ -74,6 +74,22 @@ def names(plan, arch):
     return [f'php-{minor}-build{suffix}.tar.zst', f'php-{minor}{suffix}.tar.xz', f'php-{minor}{suffix}.tar.zst']
 
 
+def extension_input(file, name):
+    require(file['name'] == name, 'Unexpected extension package')
+    require(re.fullmatch('[a-f0-9]{64}', file['sha256']) and 0 < file['bytes'] < 32 * 1024**2, 'Invalid extension input')
+    require(file['key'] == f"uploads/sha256/{file['sha256']}/{file['name']}", 'Extension key mismatch')
+    return file
+
+
+def reuses_architecture(plan, arch):
+    reuse = plan.get('reused_build')
+    if not reuse:
+        return False
+    arches = reuse.get('architectures', [b['id'] for b in plan['builds']])
+    require(arches and len(arches) == len(set(arches)) and set(arches) <= {b['id'] for b in plan['builds']}, 'Invalid reuse architecture binding')
+    return arch in arches
+
+
 def test_extension_input(file):
     require(file['name'] == 'msgpack-0.5.7.tgz', 'Unexpected PECL test package')
     require(re.fullmatch('[a-f0-9]{64}', file['sha256']) and 0 < file['bytes'] < 32 * 1024**2, 'Invalid PECL test input')
@@ -101,15 +117,21 @@ def plan():
               'source_manifest_key':key, 'dependencies':PROJECT['dependencies'], 'builds':builds, 'tests':tests,
               'installer':fingerprint(ROOT/'scripts/install.sh'), 'public_publication':False}
     record['test_extension_input'] = test_extension_input(next(f for f in manifest['extension_inputs'] if f['name'] == 'msgpack-0.5.7.tgz'))
+    record['mongo_input'] = next(f for f in manifest['extension_inputs'] if f['name'] == 'mongo-1.6.16.tgz')
+    extension_input(record['mongo_input'], 'mongo-1.6.16.tgz')
     reuse=os.environ.get('PRIVATE_REUSE_BUILD_ID','')
+    reuse_arches=os.environ.get('PRIVATE_REUSE_ARCHITECTURES','')
+    require(not reuse_arches or reuse, 'Reuse architectures require a build identity')
     if reuse:
         require(re.fullmatch(r'[1-9][0-9]*-[1-9][0-9]*',reuse), 'Invalid reuse identity')
         original=store.get_json(prefix(project,reuse)+'/plan.json')
         require(original['id']==reuse and 'reused_build' not in original, 'Invalid original build identity')
         for field in ('project','repository','minor','source','source_manifest_key','dependencies','builds','installer','ref'):
             require(original[field]==record[field], 'Reused build input mismatch: '+field)
-        for item in original['builds']:package_result(original,prefix(project,reuse),item['id'])
-        record['reused_build']={'id':reuse,'revision':original['revision'],'plan_sha256':digest(original)}
+        arches = reuse_arches.split(',') if reuse_arches else [b['id'] for b in original['builds']]
+        require(arches and len(arches) == len(set(arches)) and set(arches) <= {b['id'] for b in original['builds']}, 'Invalid reuse architectures')
+        for arch in arches:package_result(original,prefix(project,reuse),arch)
+        record['reused_build']={'id':reuse,'revision':original['revision'],'plan_sha256':digest(original),'architectures':sorted(arches)}
     store.put_json(base + '/plan.json',record)
     with open(os.environ['GITHUB_OUTPUT'],'a') as f:
         f.write('builds=' + json.dumps({'include':builds}) + '\n')
@@ -160,7 +182,7 @@ def diagnostics(store, base, label, directory):
 def build():
     plan, base = load(); store=Store()
     item = next(i for i in plan['builds'] if i['id'] == os.environ['PRIVATE_JOB_ID'])
-    if plan.get('reused_build'):
+    if reuses_architecture(plan, item['id']):
         original,oldbase=original_build(plan)
         oldresult=package_result(original,oldbase,item['id'])
         for f in oldresult['files']:
@@ -173,10 +195,12 @@ def build():
     guard=plan['source']['mitigation_patch']
     require(re.fullmatch('[a-f0-9]{64}',guard['sha256']) and guard['key']==f"uploads/patches/{guard['sha256']}.patch", 'Invalid mitigation proof')
     mitigation=task/'mitigation.patch'; store.get(guard['key'],mitigation,{k:guard[k] for k in ('sha256','bytes')})
+    mongo=extension_input(plan['mongo_input'], 'mongo-1.6.16.tgz')
+    mongo_file=task/mongo['name'];store.get(mongo['key'],mongo_file,{k:mongo[k] for k in ('sha256','bytes')})
     repo=checkout(task/'repository')
     env={**clean_env(), 'PHP_VERSION':plan['minor'], 'PHP_FULL_VERSION':plan['source']['version'],
          'SOURCE_ARCHIVE':str(source), 'SOURCE_SHA256':plan['source']['sha256'], 'SOURCE_ROOT':plan['source']['root'], 'MITIGATION_PATCH':str(mitigation), 'EXPECTED_ARCHITECTURE':item['arch'],
-         'OUTPUT_DIR':str(output), 'REPORT_DIR':str(reports), 'BUILD_REPOSITORY':str(repo),
+         'MONGO_ARCHIVE':str(mongo_file), 'OUTPUT_DIR':str(output), 'REPORT_DIR':str(reports), 'BUILD_REPOSITORY':str(repo),
          'PRIVATE_TASK_DIR':str(task), 'DEPENDENCY_CONFIG':str(ROOT/'scripts/private/project.json')}
     if 'macports_package' in item:env['MACPORTS_PACKAGE']=item['macports_package']
     try:
@@ -208,7 +232,7 @@ def package_result(plan, base, arch):
     require(result['id'] == arch and result['plan_sha256'] == digest(plan) and result['status'] == 'success', 'Invalid package result')
     require(sorted(f['name'] for f in result['files']) == sorted(names(plan,arch)), 'Incomplete package inventory')
     filebase=base
-    if plan.get('reused_build'):
+    if reuses_architecture(plan, arch):
         original,filebase=original_build(plan)
         expected=package_result(original,filebase,arch)
         require(result.get('reused_from')==plan['reused_build'] and result['files']==expected['files'], 'Reused package result mismatch')

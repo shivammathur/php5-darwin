@@ -38,6 +38,11 @@ sudo env \
   "PRIVATE_BISON=$PRIVATE_BISON" \
   "$(command -v python3)" "$here/prepare-macports.py"
 (cd "$PORTS_ROOT" && /opt/local/bin/portindex)
+# Use the exact public extension bytes already pinned in the private manifest.
+# MacPorts independently checks its own Portfile checksum before extracting.
+sudo mkdir -p /opt/local/var/macports/distfiles/php5-mongo
+sudo cp "$MONGO_ARCHIVE" /opt/local/var/macports/distfiles/php5-mongo/mongo-1.6.16.tgz
+sudo chmod 644 /opt/local/var/macports/distfiles/php5-mongo/mongo-1.6.16.tgz
 export NATIVE_BUILD_DIR="$REPORT_DIR/native"
 # Full MacPorts logs are collected even on build failure.
 trap 'sudo tar -czf "$REPORT_DIR/macports-logs.tar.gz" -C /opt/local/var/macports logs 2>/dev/null || true; sudo chown -R "$(id -u):$(id -g)" "$REPORT_DIR"' EXIT

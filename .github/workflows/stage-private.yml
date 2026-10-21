@@ -15,6 +15,11 @@ on:
         required: false
         default: ''
         type: string
+      reuse-architectures:
+        description: Optional comma-separated successful architectures to reuse; blank reuses all
+        required: false
+        default: ''
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -25,6 +30,7 @@ env:
   PRIVATE_BUILD_ID: ${{ github.run_id }}-${{ github.run_attempt }}
   PHP_VERSION: ${{ inputs.php-version }}
   PRIVATE_REUSE_BUILD_ID: ${{ inputs.reuse-build-id }}
+  PRIVATE_REUSE_ARCHITECTURES: ${{ inputs.reuse-architectures }}
   PRIVATE_SOURCE_MANIFEST_KEY: ${{ secrets.PRIVATE_SOURCE_MANIFEST_KEY }}
   PRIVATE_R2_ENDPOINT: ${{ secrets.PRIVATE_R2_ENDPOINT }}
   PRIVATE_R2_ACCESS_KEY_ID: ${{ secrets.PRIVATE_R2_ACCESS_KEY_ID }}

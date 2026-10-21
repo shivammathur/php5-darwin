@@ -1,0 +1,127 @@
+{
+  "repository": "shivammathur/php5-darwin",
+  "minor": "5.4",
+  "tag": "builds",
+  "release_id": 38022369,
+  "files": [
+    {
+      "name": "php54-arm64-cache.tar.zst",
+      "bytes": 66623639,
+      "sha256": "8944918ccd90896325a2e3553822011f1a59afa6765def79f72f9f06a56752c8"
+    },
+    {
+      "name": "php54-imagick-arm64-cache.tar.zst",
+      "bytes": 54099924,
+      "sha256": "53982aa8d42b809d83abd87c6042bbe0c3bd6dfbd98b41b415cf8a4745165fe9"
+    },
+    {
+      "name": "php54-cache.tar.zst",
+      "bytes": 61302718,
+      "sha256": "f3800c4e9ff14eb9a05c83268eb4bc8acee960ea010a92dc0276ebc895db12ee"
+    },
+    {
+      "name": "php54-imagick-cache.tar.zst",
+      "bytes": 57560417,
+      "sha256": "3eb35c7c1954580554c8b51d7cdd3b6b09ada9ae833412e4b68ef953674ed713"
+    }
+  ],
+  "before": {
+    "install.sh": {
+      "id": 647159212,
+      "size": 2071,
+      "digest": "sha256:73699ee639c6ffd4ccbf2b9c486feb5e3446a75d4ee1391519ceb9fcbcf50bbc",
+      "state": "uploaded"
+    },
+    "php53-arm64-cache.tar.zst": {
+      "id": 647158710,
+      "size": 67365430,
+      "digest": "sha256:f1364a9acafe6d744f834277f9d57cd0bab05d631af7c579579b64855be1bffb",
+      "state": "uploaded"
+    },
+    "php53-cache.tar.zst": {
+      "id": 647158714,
+      "size": 62313298,
+      "digest": "sha256:c9dacad9592bf16e07cb4753d115f5769d182ff40c1d8b9b749c9e608268e9f1",
+      "state": "uploaded"
+    },
+    "php53-imagick-arm64-cache.tar.zst": {
+      "id": 647158716,
+      "size": 52214700,
+      "digest": "sha256:f96dfe9f0b096a23a7ca944cfe5044d9896669d857476db7609064aaf540ce35",
+      "state": "uploaded"
+    },
+    "php53-imagick-cache.tar.zst": {
+      "id": 647158711,
+      "size": 54939280,
+      "digest": "sha256:215c2d86fa0502186308efabdd180e0eb0e6d8570f7317e3bf298c1b86ed39e9",
+      "state": "uploaded"
+    },
+    "php54-arm64-cache.tar.zst": {
+      "id": 647158712,
+      "size": 66556798,
+      "digest": "sha256:4e824271b9f206dc87ab732112612820589cecd71ed4cc8e0aad636870e263ce",
+      "state": "uploaded"
+    },
+    "php54-cache.tar.zst": {
+      "id": 647158918,
+      "size": 61212565,
+      "digest": "sha256:93c59203abd6f4f77c13988e4be9169b8d0160f1769ec0b4aca92f7c5f10f8fe",
+      "state": "uploaded"
+    },
+    "php54-imagick-arm64-cache.tar.zst": {
+      "id": 647158920,
+      "size": 54099765,
+      "digest": "sha256:d2b028cc160ebadcfd7cd72c448eca6913ce6a83131d1c56d6c30a7ed46b092d",
+      "state": "uploaded"
+    },
+    "php54-imagick-cache.tar.zst": {
+      "id": 647158931,
+      "size": 57547029,
+      "digest": "sha256:931558af1f53bcb80f81273be1abb88d4019534ff6e196ebe1a28486fae1b5c1",
+      "state": "uploaded"
+    },
+    "php55-arm64-cache.tar.zst": {
+      "id": 647158940,
+      "size": 66715033,
+      "digest": "sha256:cd85701a6d30f93cbae46205f89751f616d95c12ec75a0f635ad82bc0c150692",
+      "state": "uploaded"
+    },
+    "php55-cache.tar.zst": {
+      "id": 647158945,
+      "size": 61372480,
+      "digest": "sha256:adde352615c31d20f34593b262429064452744420a25efbbe2d2d2929abcac04",
+      "state": "uploaded"
+    },
+    "php55-imagick-arm64-cache.tar.zst": {
+      "id": 647159067,
+      "size": 54099471,
+      "digest": "sha256:ca13b7728503bce9ca22e816c7bae6dd8a95199a26a2bc98e4f436b8656c1b20",
+      "state": "uploaded"
+    },
+    "php55-imagick-cache.tar.zst": {
+      "id": 647159086,
+      "size": 57547245,
+      "digest": "sha256:7212f56f806dbfdb786f824b5ab5b8618667bc39a240a7ea0f6178fa7df6d4c4",
+      "state": "uploaded"
+    }
+  },
+  "campaign_files": [
+    "php53-arm64-cache.tar.zst",
+    "php53-imagick-arm64-cache.tar.zst",
+    "php53-cache.tar.zst",
+    "php53-imagick-cache.tar.zst",
+    "php54-arm64-cache.tar.zst",
+    "php54-imagick-arm64-cache.tar.zst",
+    "php54-cache.tar.zst",
+    "php54-imagick-cache.tar.zst",
+    "php55-arm64-cache.tar.zst",
+    "php55-imagick-arm64-cache.tar.zst",
+    "php55-cache.tar.zst",
+    "php55-imagick-cache.tar.zst",
+    "install.sh"
+  ],
+  "transport": "individual",
+  "backup_replacements": true,
+  "no_rebuild": true,
+  "authorization": "Publish existing approved PHP 5.3\u20135.5 binaries to GitHub Releases; then test with setup-php."
+}

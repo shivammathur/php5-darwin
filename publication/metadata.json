@@ -1,0 +1,176 @@
+{
+  "repository": "shivammathur/php5-darwin",
+  "minor": "metadata",
+  "tag": "builds",
+  "release_id": 38022369,
+  "files": [
+    {
+      "name": "install.sh",
+      "bytes": 2071,
+      "sha256": "73699ee639c6ffd4ccbf2b9c486feb5e3446a75d4ee1391519ceb9fcbcf50bbc",
+      "metadata": true,
+      "content_base64": "IyEvdXNyL2Jpbi9lbnYgYmFzaAoKc2V0IC1ldW8gcGlwZWZhaWwKCmdldCgpIHsKICBsb2NhbCBmaWxlX3BhdGg9JDEKICBsb2NhbCBsaW5rCiAgc2hpZnQKICBpZiBbWyAtbiAiJHtQSFA1X0NBQ0hFX0RJUjotfSIgXV07IHRoZW4KICAgIGNwICIkUEhQNV9DQUNIRV9ESVIvJGNhY2hlIiAiJGZpbGVfcGF0aCIKICAgIHJldHVybgogIGZpCiAgZm9yIGxpbmsgaW4gIiRAIjsgZG8KICAgIGlmIGN1cmwgLWZzU0wgLS1yZXRyeSAzIC0tY29tcHJlc3NlZCAtbyAiJGZpbGVfcGF0aCIgIiRsaW5rIjsgdGhlbgogICAgICByZXR1cm4KICAgIGZpCiAgICBlY2hvICJGYWlsZWQgdG8gZmV0Y2ggJGxpbmsiCiAgZG9uZQogIHJldHVybiAxCn0KCnNldHVwX3BocCgpIHsKICBjYWNoZT0iJHBocF92ZXJzaW9uJGFyY2hfc3VmZml4LWNhY2hlLnRhci56c3QiCiAgZ2V0ICIkdG1wX3BhdGgudGFyLnpzdCIgIiRyZXBvX3VybC9yZWxlYXNlcy9sYXRlc3QvZG93bmxvYWQvJGNhY2hlIiAiJGNkcy9wdWJsaWMvJHJlcG8vcmF3L2ZpbGVzLyRjYWNoZSIKICAjIE1hY1BvcnRzIGFyY2hpdmVzIG1hcmsgbW9zdCBmaWxlcyBhcyBjb21wcmVzc2VkLiBEbyBub3QgcmVjb21wcmVzcyBlYWNoCiAgIyBmaWxlIHdpdGggbWFjT1MgZmlsZXN5c3RlbSBjb21wcmVzc2lvbiB3aGlsZSBleHRyYWN0aW5nIHRoZSBydW50aW1lLgogIHpzdGQgLWRjcSAiJHRtcF9wYXRoLnRhci56c3QiIHwgc3VkbyB0YXIgLS1ub3ByZXNlcnZlSEZTQ29tcHJlc3Npb24gLXhmIC0gLUMgLwogIHN1ZG8gbWtkaXIgLXAgIiR1c3JfYmluIgogIHN1ZG8gbG4gLXNmICIkb3B0X2JpbiIvKiAiJHVzcl9iaW4iCiAgc3VkbyBsbiAtc2YgIiRvcHRfYmluIi9waHAtY2dpIiR2ZXJzaW9uIiAiJHVzcl9iaW4iL3BocC1jZ2kKICBzdWRvIGxuIC1zZiAiJG9wdF9zYmluIi9waHAtZnBtIiR2ZXJzaW9uIiAiJHVzcl9iaW4iL3BocC1mcG0KfQoKYWRkX2ltYWdpY2soKSB7CiAgY2FjaGU9IiRwaHBfdmVyc2lvbi1pbWFnaWNrJGFyY2hfc3VmZml4LWNhY2hlLnRhci56c3QiCiAgZ2V0ICIkdG1wX3BhdGgtaW1hZ2ljay50YXIuenN0IiAiJHJlcG9fdXJsL3JlbGVhc2VzL2xhdGVzdC9kb3dubG9hZC8kY2FjaGUiICIkY2RzL3B1YmxpYy8kcmVwby9yYXcvZmlsZXMvJGNhY2hlIgogIHpzdGQgLWRjcSAiJHRtcF9wYXRoLWltYWdpY2sudGFyLnpzdCIgfCBzdWRvIHRhciAtLW5vcHJlc2VydmVIRlNDb21wcmVzc2lvbiAteGYgLSAtQyAvCn0KCmNvbmZpZ3VyZV9wZWNsKCkgewogIHN1ZG8gY3AgIiRwaHBfZXRjX2RpciIvLnBlYXJyYyAiJEhPTUUvLnBlYXJyYyIKICBzdWRvIGNob3duICIkKGlkIC11KTokKGlkIC1nKSIgIiRIT01FLy5wZWFycmMiCn0KCnZlcnNpb249JHsxOi19CmNhc2UgIiR2ZXJzaW9uIiBpbgogIDUzfDU0fDU1KSA7OwogICopIGVjaG8gIlVzYWdlOiAkMCA8NTN8NTR8NTU+IFtpbWFnaWNrXSIgPiYyOyBleGl0IDEgOzsKZXNhYwpwaHBfdmVyc2lvbj0icGhwJHZlcnNpb24iCnBocF9ldGNfZGlyPSIvb3B0L2xvY2FsL2V0Yy8kcGhwX3ZlcnNpb24iCnRtcF9kaXI9JChta3RlbXAgLWQpCnRyYXAgJ3N1ZG8gcm0gLXJmICIkdG1wX2RpciInIEVYSVQKdG1wX3BhdGg9IiR0bXBfZGlyLyRwaHBfdmVyc2lvbiIKb3B0X2Jpbj0iL29wdC9sb2NhbC9iaW4iCm9wdF9zYmluPSIvb3B0L2xvY2FsL3NiaW4iCnVzcl9iaW49Ii91c3IvbG9jYWwvYmluIgpnaXRodWI9Imh0dHBzOi8vZ2l0aHViLmNvbSIKY2RzPSJodHRwczovL2RsLmNsb3Vkc21pdGguaW8iCnJlcG89InNoaXZhbW1hdGh1ci9waHA1LWRhcndpbiIKcmVwb191cmw9IiRnaXRodWIvJHJlcG8iCgpjYXNlICIkKHVuYW1lIC1tKSIgaW4KICBhcm02NCkgYXJjaF9zdWZmaXg9LWFybTY0IDs7CiAgeDg2XzY0KSBhcmNoX3N1ZmZpeD0gOzsKICAqKSBlY2hvICJVbnN1cHBvcnRlZCBhcmNoaXRlY3R1cmU6ICQodW5hbWUgLW0pIiA+JjI7IGV4aXQgMSA7Owplc2FjCgpleHBvcnQgVEVSTT14dGVybQoKaWYgWyAiJHsyOi19IiA9ICJpbWFnaWNrIiBdOyB0aGVuCiAgYWRkX2ltYWdpY2sKZWxzZQogIHNldHVwX3BocAogIGNvbmZpZ3VyZV9wZWNsCmZpCg=="
+    }
+  ],
+  "before": {
+    "install.sh": {
+      "id": 647159212,
+      "size": 2071,
+      "digest": "sha256:73699ee639c6ffd4ccbf2b9c486feb5e3446a75d4ee1391519ceb9fcbcf50bbc",
+      "state": "uploaded"
+    },
+    "php53-arm64-cache.tar.zst": {
+      "id": 647158710,
+      "size": 67365430,
+      "digest": "sha256:f1364a9acafe6d744f834277f9d57cd0bab05d631af7c579579b64855be1bffb",
+      "state": "uploaded"
+    },
+    "php53-cache.tar.zst": {
+      "id": 647158714,
+      "size": 62313298,
+      "digest": "sha256:c9dacad9592bf16e07cb4753d115f5769d182ff40c1d8b9b749c9e608268e9f1",
+      "state": "uploaded"
+    },
+    "php53-imagick-arm64-cache.tar.zst": {
+      "id": 647158716,
+      "size": 52214700,
+      "digest": "sha256:f96dfe9f0b096a23a7ca944cfe5044d9896669d857476db7609064aaf540ce35",
+      "state": "uploaded"
+    },
+    "php53-imagick-cache.tar.zst": {
+      "id": 647158711,
+      "size": 54939280,
+      "digest": "sha256:215c2d86fa0502186308efabdd180e0eb0e6d8570f7317e3bf298c1b86ed39e9",
+      "state": "uploaded"
+    },
+    "php54-arm64-cache.tar.zst": {
+      "id": 647158712,
+      "size": 66556798,
+      "digest": "sha256:4e824271b9f206dc87ab732112612820589cecd71ed4cc8e0aad636870e263ce",
+      "state": "uploaded"
+    },
+    "php54-cache.tar.zst": {
+      "id": 647158918,
+      "size": 61212565,
+      "digest": "sha256:93c59203abd6f4f77c13988e4be9169b8d0160f1769ec0b4aca92f7c5f10f8fe",
+      "state": "uploaded"
+    },
+    "php54-imagick-arm64-cache.tar.zst": {
+      "id": 647158920,
+      "size": 54099765,
+      "digest": "sha256:d2b028cc160ebadcfd7cd72c448eca6913ce6a83131d1c56d6c30a7ed46b092d",
+      "state": "uploaded"
+    },
+    "php54-imagick-cache.tar.zst": {
+      "id": 647158931,
+      "size": 57547029,
+      "digest": "sha256:931558af1f53bcb80f81273be1abb88d4019534ff6e196ebe1a28486fae1b5c1",
+      "state": "uploaded"
+    },
+    "php55-arm64-cache.tar.zst": {
+      "id": 647158940,
+      "size": 66715033,
+      "digest": "sha256:cd85701a6d30f93cbae46205f89751f616d95c12ec75a0f635ad82bc0c150692",
+      "state": "uploaded"
+    },
+    "php55-cache.tar.zst": {
+      "id": 647158945,
+      "size": 61372480,
+      "digest": "sha256:adde352615c31d20f34593b262429064452744420a25efbbe2d2d2929abcac04",
+      "state": "uploaded"
+    },
+    "php55-imagick-arm64-cache.tar.zst": {
+      "id": 647159067,
+      "size": 54099471,
+      "digest": "sha256:ca13b7728503bce9ca22e816c7bae6dd8a95199a26a2bc98e4f436b8656c1b20",
+      "state": "uploaded"
+    },
+    "php55-imagick-cache.tar.zst": {
+      "id": 647159086,
+      "size": 57547245,
+      "digest": "sha256:7212f56f806dbfdb786f824b5ab5b8618667bc39a240a7ea0f6178fa7df6d4c4",
+      "state": "uploaded"
+    }
+  },
+  "campaign_files": [
+    "php53-arm64-cache.tar.zst",
+    "php53-imagick-arm64-cache.tar.zst",
+    "php53-cache.tar.zst",
+    "php53-imagick-cache.tar.zst",
+    "php54-arm64-cache.tar.zst",
+    "php54-imagick-arm64-cache.tar.zst",
+    "php54-cache.tar.zst",
+    "php54-imagick-cache.tar.zst",
+    "php55-arm64-cache.tar.zst",
+    "php55-imagick-arm64-cache.tar.zst",
+    "php55-cache.tar.zst",
+    "php55-imagick-cache.tar.zst",
+    "install.sh"
+  ],
+  "transport": "individual",
+  "backup_replacements": true,
+  "no_rebuild": true,
+  "authorization": "Publish existing approved PHP 5.3\u20135.5 binaries to GitHub Releases; then test with setup-php.",
+  "require_packages": [
+    {
+      "name": "php53-arm64-cache.tar.zst",
+      "bytes": 67799573,
+      "sha256": "32c15f9f7b1a875801ae8e92fa0de2a9f929abf9885a4b49c05f5f73718c38cc"
+    },
+    {
+      "name": "php53-imagick-arm64-cache.tar.zst",
+      "bytes": 56969101,
+      "sha256": "4e5ffc7605ab2efa03e71cd9fcae9eb509d70a0826a77eb034045c00758a6734"
+    },
+    {
+      "name": "php53-cache.tar.zst",
+      "bytes": 62708470,
+      "sha256": "870c0bbb9b5f0116b1ef30d1a1002f23fc945970631607aaa8bea4291bada1b2"
+    },
+    {
+      "name": "php53-imagick-cache.tar.zst",
+      "bytes": 60173780,
+      "sha256": "d69e6fcd9e37b1dbff4481683ddacca9c4f83ed89316e6b4a034426818ffa1e1"
+    },
+    {
+      "name": "php54-arm64-cache.tar.zst",
+      "bytes": 66623639,
+      "sha256": "8944918ccd90896325a2e3553822011f1a59afa6765def79f72f9f06a56752c8"
+    },
+    {
+      "name": "php54-imagick-arm64-cache.tar.zst",
+      "bytes": 54099924,
+      "sha256": "53982aa8d42b809d83abd87c6042bbe0c3bd6dfbd98b41b415cf8a4745165fe9"
+    },
+    {
+      "name": "php54-cache.tar.zst",
+      "bytes": 61302718,
+      "sha256": "f3800c4e9ff14eb9a05c83268eb4bc8acee960ea010a92dc0276ebc895db12ee"
+    },
+    {
+      "name": "php54-imagick-cache.tar.zst",
+      "bytes": 57560417,
+      "sha256": "3eb35c7c1954580554c8b51d7cdd3b6b09ada9ae833412e4b68ef953674ed713"
+    },
+    {
+      "name": "php55-arm64-cache.tar.zst",
+      "bytes": 66785724,
+      "sha256": "d4395469aab05820480c50214ea724437ca2c93284f183961cc74a8c5427f069"
+    },
+    {
+      "name": "php55-imagick-arm64-cache.tar.zst",
+      "bytes": 54099594,
+      "sha256": "624032eaa9175d11d7bd54b550518c966aad494f7c96c1d2814371215c6210a7"
+    },
+    {
+      "name": "php55-cache.tar.zst",
+      "bytes": 61434805,
+      "sha256": "29a61f7d2cbd06761f865317b190ab17c0c1d7b726df1c8081a56f1990241b83"
+    },
+    {
+      "name": "php55-imagick-cache.tar.zst",
+      "bytes": 57559657,
+      "sha256": "ade107e9231ebda12a2230d425ac9d0c4043b5dfd0f8aa2b2f16ecab1cae114b"
+    }
+  ]
+}

@@ -14,6 +14,16 @@ on:
         required: true
         default: false
         type: boolean
+      candidate-run:
+        description: Revalidate existing candidate caches without rebuilding PHP
+        required: false
+        default: ''
+        type: string
+      candidate-sha:
+        description: Exact workflow commit of the candidate run
+        required: false
+        default: ''
+        type: string
       source-run:
         description: Publish an already validated build run from this exact commit (leave empty to build)
         required: false
@@ -22,6 +32,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 defaults:
   run:
@@ -38,7 +49,21 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+      - name: Validate requested operation
+        env:
+          CANDIDATE_RUN: ${{ inputs.candidate-run }}
+          CANDIDATE_SHA: ${{ inputs.candidate-sha }}
+        run: |
+          if [[ -z "$CANDIDATE_RUN" ]]; then test -z "$CANDIDATE_SHA"; fi
+      - name: Reuse verified candidate source inputs
+        if: ${{ inputs.candidate-run != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN: ${{ inputs.candidate-run }}
+          CANDIDATE_SHA: ${{ inputs.candidate-sha }}
+        run: bash scripts/backports/reuse-candidates.sh sources "$RUNNER_TEMP/source-inputs"
       - name: Resolve and verify source inputs
+        if: ${{ inputs.candidate-run == '' }}
         run: bash scripts/backports/source-inputs.sh resolve "$RUNNER_TEMP/source-inputs"
       - uses: actions/upload-artifact@v7
         with:
@@ -87,6 +112,7 @@ jobs:
           minor="${PHP_VERSION:0:1}.${PHP_VERSION:1:1}"
           bash scripts/backports/source-inputs.sh activate "$RUNNER_TEMP/source-inputs" --minor "$minor"
       - name: Prepare native MacPorts and backport source
+        if: ${{ inputs.candidate-run == '' }}
         run: |
           mkdir -p "$RUNNER_TEMP/backport-task" "$RUNNER_TEMP/audit/source"
           export BACKPORT_TASK_DIR="$RUNNER_TEMP/backport-task"
@@ -98,16 +124,35 @@ jobs:
           cp "$RUNNER_TEMP/source-inputs/manifest.json" "$REPORT_DIR/sources.json"
 
       - name: Build native PHP and Imagick caches
+        if: ${{ inputs.candidate-run == '' }}
         env:
           NATIVE_BUILD_DIR: ${{ runner.temp }}/native-build
         run: |
           command -v zstd || brew install zstd
           bash scripts/build-native-cache.sh "$PHP_VERSION" "$RUNNER_TEMP/builds"
 
+      - name: Reuse verified native caches
+        if: ${{ inputs.candidate-run != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN: ${{ inputs.candidate-run }}
+          CANDIDATE_SHA: ${{ inputs.candidate-sha }}
+        run: |
+          bash scripts/backports/reuse-candidates.sh caches "$RUNNER_TEMP/builds"
+          echo "PHP_VERSION=${PHP_VERSION/./}" >> "$GITHUB_ENV"
+          backup="$RUNNER_TEMP/opt-local.preinstalled"
+          test ! -e "$backup"
+          if [[ -d /opt/local ]]; then
+            sudo mv /opt/local "$backup"
+            echo present > "$RUNNER_TEMP/opt-local-state"
+          else
+            echo absent > "$RUNNER_TEMP/opt-local-state"
+          fi
+
       - name: Isolate and install candidate PHP cache
         id: install
         run: |
-          sudo mv /opt/local "$RUNNER_TEMP/opt-local.build"
+          if [[ -d /opt/local ]]; then sudo mv /opt/local "$RUNNER_TEMP/opt-local.build"; fi
           PHP5_CACHE_DIR="$RUNNER_TEMP/builds" bash scripts/install.sh "$PHP_VERSION"
           echo /usr/local/bin >> "$GITHUB_PATH"
 
@@ -173,8 +218,13 @@ jobs:
           echo "f38623ebdeeab5905b24b048fd32804150e598436cc43db9fc12362894c1279d  $composer" | shasum -a 256 -c -
           php "$composer" --version
           php "$composer" show --platform | tee "$RUNNER_TEMP/composer-platform.txt"
-          curl_backend=openssl
-          [[ "$PHP_VERSION" = 53 ]] && curl_backend=gnutls
+          # shellcheck disable=SC2016
+          curl_tls=$(php -r '$curl = curl_version(); echo $curl["ssl_version"];')
+          case "$curl_tls" in
+            OpenSSL/*) curl_backend=openssl ;;
+            GnuTLS/*) curl_backend=gnutls ;;
+            *) echo "Unsupported curl TLS backend: $curl_tls" >&2; exit 1 ;;
+          esac
           grep -Eq "^lib-curl-${curl_backend}[[:space:]]" "$RUNNER_TEMP/composer-platform.txt"
           if grep -Eq '^lib-curl-[^[:space:]]*[()]' "$RUNNER_TEMP/composer-platform.txt"; then
             echo "Composer generated an invalid lib-curl package name" >&2

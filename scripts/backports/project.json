@@ -1,0 +1,13 @@
+{
+  "project": "php5-darwin",
+  "dependencies": {
+    "macports_ports_commit": "09726563c31b9626931c5b6461edce55f5f4a76c",
+    "macports_ports_sha256": "cd5f2a968fcdc194ddca19b7d8d71d4b039fed729f7d5c4ff4efc3072b2b4c67",
+    "macports_packages": {
+      "MacPorts-2.12.6-14-Sonoma.pkg": "184ac171c201391a502958951867e77062010c781ade302b70b1f176e42d23d6",
+      "MacPorts-2.12.6-15-Sequoia.pkg": "2d6d58ff3ff60e70f8dc05cb2df9df3137e3d7c0c6d6f6236d68c8ba03343e34"
+    },
+    "bison_version": "2.6.4",
+    "bison_sha256": "de2d15dfdcfc24405464cb95acc9d5ef31fb2e5be4aca6a530ec59bb57c30e5d"
+  }
+}

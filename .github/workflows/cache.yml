@@ -1,10 +1,16 @@
 name: Build PHP caches
+run-name: Build PHP 5.3–5.5 caches (${{ inputs.ticket || github.sha }})
 
 on:
   workflow_dispatch:
     inputs:
+      ticket:
+        description: Unique dispatch tracking ticket
+        required: false
+        default: ''
+        type: string
       publish:
-        description: Replace the cache assets in the builds release and Cloudsmith
+        description: Replace validated cache assets in GitHub and the existing Cloudsmith mirror
         required: true
         default: false
         type: boolean
@@ -26,7 +32,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  source:
+    if: ${{ inputs.source-run == '' }}
+    name: Resolve backport branches
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Resolve and verify source inputs
+        run: bash scripts/backports/source-inputs.sh resolve "$RUNNER_TEMP/source-inputs"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: backport-source-inputs
+          path: ${{ runner.temp }}/source-inputs
+          if-no-files-found: error
+          retention-days: 14
+
   build:
+    needs: source
     if: ${{ inputs.source-run == '' }}
     name: PHP ${{ matrix.php-version }} ${{ matrix.target.architecture }}
     runs-on: ${{ matrix.target.runner }}
@@ -56,33 +78,24 @@ jobs:
           bash scripts/tests/test-audit.sh
           python3 scripts/tests/test-runtime-filter.py
 
-      - name: Prepare native MacPorts
+      - uses: actions/download-artifact@v8
+        with:
+          name: backport-source-inputs
+          path: ${{ runner.temp }}/source-inputs
+      - name: Select verified source
         run: |
-          test "$(uname -m)" = "$EXPECTED_ARCHITECTURE"
-          backup="$RUNNER_TEMP/opt-local.preinstalled"
-          state="$RUNNER_TEMP/opt-local-state"
-          test ! -e "$backup"
-          if [[ -d /opt/local ]]; then
-            sudo mv /opt/local "$backup"
-            echo present > "$state"
-          else
-            echo absent > "$state"
-          fi
-          curl -fsSL --retry 3 -o "$RUNNER_TEMP/macports.pkg" \
-            "https://github.com/macports/macports-base/releases/download/v2.12.6/$MACPORTS_PACKAGE"
-          sudo installer -pkg "$RUNNER_TEMP/macports.pkg" -target /
-          sudo /opt/local/bin/port -N sync
-          port_dir="$(/opt/local/bin/port dir "php$PHP_VERSION")"
-          ports_root="$(cd "$port_dir/../.." && pwd)"
-          python_bin="$(command -v python3)"
-          sudo "$python_bin" scripts/enable-legacy-macports.py "$ports_root"
-          sudo cp scripts/ports/php-Twig/Portfile "$ports_root/php/php-Twig/Portfile"
-          # Twig's restored PHP 5 subports must also be present in the index.
-          (cd "$ports_root" && sudo /opt/local/bin/portindex)
-          grep -n -C 3 'implicit-function-declaration' "$port_dir/Portfile"
-          grep -n -C 3 'implicit-function-declaration' \
-            "$ports_root/_resources/port1.0/group/php-1.1.tcl"
-          sw_vers
+          minor="${PHP_VERSION:0:1}.${PHP_VERSION:1:1}"
+          bash scripts/backports/source-inputs.sh activate "$RUNNER_TEMP/source-inputs" --minor "$minor"
+      - name: Prepare native MacPorts and backport source
+        run: |
+          mkdir -p "$RUNNER_TEMP/backport-task" "$RUNNER_TEMP/audit/source"
+          export BACKPORT_TASK_DIR="$RUNNER_TEMP/backport-task"
+          export REPORT_DIR="$RUNNER_TEMP/audit/source"
+          export BUILD_REPOSITORY="$GITHUB_WORKSPACE"
+          bash scripts/backports/prepare.sh
+          # Existing cache scripts use the compact PHP minor.
+          echo "PHP_VERSION=${PHP_VERSION/./}" >> "$GITHUB_ENV"
+          cp "$RUNNER_TEMP/source-inputs/manifest.json" "$REPORT_DIR/sources.json"
 
       - name: Build native PHP and Imagick caches
         env:
@@ -113,6 +126,8 @@ jobs:
           grep -q "$EXPECTED_ARCHITECTURE" "$RUNNER_TEMP/php-file.txt"
           php --ini
           php -v
+          test "$(php -r 'echo PHP_VERSION;')" = "$PHP_FULL_VERSION"
+          "/opt/local/bin/php-cgi$PHP_VERSION" -v
           modules="$(php -m 2>&1)"
           printf '%s\n' "$modules"
           if grep -Eq '^PHP (Warning|Startup|Deprecated|Notice)' <<< "$modules"; then
@@ -269,6 +284,13 @@ jobs:
           run-id: ${{ inputs.source-run || github.run_id }}
           github-token: ${{ github.token }}
 
+      - uses: actions/download-artifact@v8
+        with:
+          name: backport-source-inputs
+          path: ${{ runner.temp }}/source-inputs
+          run-id: ${{ inputs.source-run || github.run_id }}
+          github-token: ${{ github.token }}
+
       - name: Verify candidate set
         run: |
           mkdir -p "$RUNNER_TEMP/builds"
@@ -314,17 +336,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cp scripts/install.sh "$RUNNER_TEMP/builds/install.sh"
-          for asset in "$RUNNER_TEMP"/builds/*.tar.zst; do
+          cp "$RUNNER_TEMP/source-inputs/manifest.json" "$RUNNER_TEMP/builds/php5-source-manifest.json"
+          (cd "$RUNNER_TEMP/builds" && sha256sum ./*.tar.zst install.sh php5-source-manifest.json > php5-SHA256SUMS)
+          for asset in "$RUNNER_TEMP"/builds/*.tar.zst "$RUNNER_TEMP/builds/install.sh"; do
             name="$(basename "$asset")"
             cloudsmith push raw "$GITHUB_REPOSITORY" "$asset" --republish \
               --summary "$name" --description "$name"
           done
-          cloudsmith push raw "$GITHUB_REPOSITORY" "$RUNNER_TEMP/builds/install.sh" \
-            --republish --summary install.sh --description install.sh
           gh release upload builds --repo "$GITHUB_REPOSITORY" \
             "$RUNNER_TEMP"/builds/*.tar.zst --clobber
           gh release upload builds --repo "$GITHUB_REPOSITORY" \
-            "$RUNNER_TEMP/builds/install.sh" --clobber
+            "$RUNNER_TEMP/builds/install.sh" "$RUNNER_TEMP/builds/php5-source-manifest.json" "$RUNNER_TEMP/builds/php5-SHA256SUMS" --clobber
 
       - name: Verify published GitHub assets
         env:
@@ -341,7 +363,7 @@ jobs:
 
       - name: Verify published Cloudsmith assets
         run: |
-          for asset in "$RUNNER_TEMP"/builds/*; do
+          for asset in "$RUNNER_TEMP"/builds/*.tar.zst "$RUNNER_TEMP/builds/install.sh"; do
             name="$(basename "$asset")"
             expected="$(sha256sum "$asset" | cut -d' ' -f1)"
             matched=false
